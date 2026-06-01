@@ -1,21 +1,28 @@
-FROM oven/bun:1 AS build
-
+# ---------- build ----------
+FROM oven/bun:1 AS builder
 WORKDIR /app
 
-COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile
+# Copia só o manifesto primeiro (melhor cache)
+COPY package.json ./
+
+# O bun.lock original aponta para o registry PRIVADO da Lovable
+# (europe-west1-npm.pkg.dev) e dá 403 fora daquele ambiente.
+# Removemos e resolvemos do npm publico.
+RUN rm -f bun.lock && bun install --registry https://registry.npmjs.org
 
 COPY . .
 RUN bun run build
 
-FROM nginx:alpine
+# ---------- runtime ----------
+FROM node:22-slim AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+ENV PORT=3000
 
-RUN rm -rf /usr/share/nginx/html/*
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/server.mjs ./server.mjs
+COPY --from=builder /app/package.json ./package.json
 
-COPY --from=build /app/dist/client/ /usr/share/nginx/html/
-
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-
-EXPOSE 80
-
-CMD ["nginx", "-g", "daemon off;"]
+EXPOSE 3000
+CMD ["node", "server.mjs"]
