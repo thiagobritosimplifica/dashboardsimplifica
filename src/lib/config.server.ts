@@ -24,3 +24,14 @@ export function getServerConfig() {
     //   stripeSecretKey: process.env.STRIPE_SECRET_KEY,
   };
 }
+
+// GoHighLevel / LeadConnector API config (same integration used in N8N).
+// Override via env vars in production; the fallbacks keep dev working out of the box.
+export function getGhlConfig() {
+  return {
+    token: process.env.GHL_API_TOKEN || "pit-09e6afd8-7e3d-4a32-afbe-055852044003",
+    locationId: process.env.GHL_LOCATION_ID || "pvmcGFlxStEMBSMGNVHH",
+    apiVersion: "2021-07-28",
+    baseUrl: "https://services.leadconnectorhq.com",
+  };
+}

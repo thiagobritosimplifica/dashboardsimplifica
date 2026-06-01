@@ -1,12 +1,15 @@
 import { createServerFn } from "@tanstack/react-start";
 import type { DashboardData } from "./dashboard-data";
+import { getGhlFunnel } from "./ghl.functions";
 
 // ─── Configuration ───────────────────────────────────────────────────────────
 const SPREADSHEET_ID = "1hVYKI98sgpYqzgcP9vmzQnEjRbCo7asw3BUH_OnZUH0";
 
 const SHEET_GIDS = {
-  META_RAW: "1864099546",
-  DADOS_DIARIOS: "1299774400",
+  META_RAW: "796420346",      // Ad spend per campaign/day (Meta Ads export)
+  GHL_RAW: "1768392785",      // Lead CRM data (GoHighLevel raw)
+  DADOS_DIARIOS: "23753538",  // Lead CRM data (daily entries)
+  VENDAS: "1093065333",       // Closed deals with Closer + revenue
 } as const;
 
 // ─── Server-side cache (5 minutes) ──────────────────────────────────────────
@@ -65,7 +68,8 @@ function parseCSV(text: string): string[][] {
 
 function parseBR(v: string | undefined): number {
   if (!v || v.trim() === "") return 0;
-  const s = v.replace(/[R$\s.]/g, "").replace(",", ".");
+  // Remove R$, spaces, dot (thousands separator), then replace comma with dot
+  const s = v.replace(/[R$\s]/g, "").replace(/\./g, "").replace(",", ".");
   const n = Number(s);
   return Number.isFinite(n) ? n : 0;
 }
@@ -82,7 +86,13 @@ function cellVal(row: string[], hmap: Map<string, number>, key: string): string 
   return (row[idx] ?? "").trim();
 }
 
+function isNonEmpty(v: string): boolean {
+  return v !== "" && v !== "0";
+}
+
 // ─── META_RAW processing ─────────────────────────────────────────────────────
+// One row per ad per day: Date, Campaign Name, ..., Action Leads, ..., Spend, ...
+// Note: the export sometimes includes a duplicate header row — skip it.
 function processMetaRaw(rows: string[][]): { invested: number; leads: number } {
   if (rows.length < 2) return { invested: 0, leads: 0 };
   const hmap = headerMap(rows[0]);
@@ -91,70 +101,214 @@ function processMetaRaw(rows: string[][]): { invested: number; leads: number } {
 
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
+    if (!r || r.length < 2) continue;
+    // Skip duplicate header rows emitted by Google Sheets export
+    if ((r[0] ?? "").trim().toLowerCase() === "date") continue;
+
     invested += parseBR(cellVal(r, hmap, "spend (cost, amount spent)"));
-    leads += parseInt(cellVal(r, hmap, "action leads") || "0", 10) || 0;
+    const leadsStr = cellVal(r, hmap, "action leads");
+    leads += parseFloat(leadsStr.replace(",", ".")) || 0;
   }
   return { invested, leads };
 }
 
-// ─── DADOS_DIARIOS processing ────────────────────────────────────────────────
-function processDadosDiarios(rows: string[][]) {
+// ─── Lead processing (GHL_RAW + DADOS DIARIOS) ───────────────────────────────
+// Both sheets: Data, Nome, Empresa, Telefone, Email, Origem, Campanha,
+//   Data Entrada, Pipeline, Etapa Atual, SDR, Closer, Status, Nicho,
+//   Ticket Estimado, Reunião Agendada, Reunião Realizada, Proposta Enviada,
+//   Venda Fechada, Motivo Perda, Última Atualização
+
+interface LeadRow {
+  nome: string;
+  telefone: string;
+  email: string;
+  etapa: string;
+  sdr: string;
+  closer: string;
+  reuniaoAgendada: string;
+  reuniaoRealizada: string;
+  propostaEnviada: string;
+  vendaFechada: string;
+}
+
+// Pipeline order: higher rank = further in funnel
+// Atendimento Humano* = SDR working pre-meeting (before Reunião Agendada)
+function stageRank(etapa: string): number {
+  const e = etapa.toLowerCase();
+  if (e.includes("venda ganha")) return 13;
+  if (e.includes("aguardando pagamento")) return 11;
+  if (e.includes("negoci")) return 10;
+  if (e.includes("proposta")) return 10;
+  if (e.includes("reuni") && e.includes("agendada")) return 9;
+  if (e.includes("atendimento humano")) return 8;
+  if (e.includes("qualificado")) return 5;
+  if (e.includes("qualifica")) return 4;
+  if (e.includes("nao responde") || e.includes("não responde")) return 3;
+  if (e.includes("sauda")) return 2;
+  if (e.includes("preencheu")) return 1;
+  return 0;
+}
+
+function extractLeads(rows: string[][]): LeadRow[] {
+  if (rows.length < 2) return [];
+  const hmap = headerMap(rows[0]);
+  const leads: LeadRow[] = [];
+
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || r.length < 2) continue;
+    const nome = cellVal(r, hmap, "nome");
+    if (!nome) continue; // skip blank rows
+
+    leads.push({
+      nome,
+      telefone: cellVal(r, hmap, "telefone"),
+      email: cellVal(r, hmap, "email"),
+      etapa: cellVal(r, hmap, "etapa atual"),
+      sdr: cellVal(r, hmap, "sdr"),
+      closer: cellVal(r, hmap, "closer"),
+      reuniaoAgendada: cellVal(r, hmap, "reunião agendada"),
+      reuniaoRealizada: cellVal(r, hmap, "reunião realizada"),
+      propostaEnviada: cellVal(r, hmap, "proposta enviada"),
+      vendaFechada: cellVal(r, hmap, "venda fechada"),
+    });
+  }
+  return leads;
+}
+
+// Funnel predicates — CUMULATIVE: a lead counts at stage X if they
+// reached OR passed that stage (based on current Etapa Atual).
+function isAgendada(l: LeadRow): boolean {
+  return stageRank(l.etapa) >= 9 || isNonEmpty(l.reuniaoAgendada);
+}
+
+function isRealizada(l: LeadRow): boolean {
+  // Post-meeting: negotiation or beyond implies meeting was completed
+  return stageRank(l.etapa) >= 10 || isNonEmpty(l.reuniaoRealizada);
+}
+
+function isProposta(l: LeadRow): boolean {
+  return stageRank(l.etapa) >= 11 || isNonEmpty(l.propostaEnviada);
+}
+
+function isVendaGanha(l: LeadRow): boolean {
+  return stageRank(l.etapa) >= 13 || isNonEmpty(l.vendaFechada);
+}
+
+function processLeads(
+  ghlRows: string[][],
+  dadosRows: string[][]
+): {
+  funnel: { agendadas: number; realizadas: number; propostas: number; vendas: number };
+  sdrMap: Map<string, { agendadas: number; realizadas: number }>;
+  closerMap: Map<string, { vendas: number; tcv: number }>;
+  totalLeads: number;
+} {
+  const ghlLeads = extractLeads(ghlRows);
+  const dadosLeads = extractLeads(dadosRows);
+  const normalizePhone = (p: string) => p.replace(/\D/g, "");
+
+  // Smart merge: deduplicate by phone/name, keeping the most advanced stage.
+  // When updating from a more-advanced duplicate, preserve SDR/Closer from GHL
+  // (GHL has the SDR assignments; DADOS_DIARIOS may have more recent stage info).
+  const leadMap = new Map<string, LeadRow>();
+
+  for (const lead of [...ghlLeads, ...dadosLeads]) {
+    const phone = normalizePhone(lead.telefone);
+    const key = phone || lead.nome.toLowerCase().trim();
+    if (!key) continue;
+
+    const existing = leadMap.get(key);
+    if (!existing) {
+      leadMap.set(key, lead);
+    } else if (stageRank(lead.etapa) > stageRank(existing.etapa)) {
+      // Keep the more advanced stage; preserve SDR/Closer from whichever has them
+      leadMap.set(key, {
+        ...lead,
+        sdr: existing.sdr || lead.sdr,
+        closer: existing.closer || lead.closer,
+        reuniaoAgendada: existing.reuniaoAgendada || lead.reuniaoAgendada,
+        reuniaoRealizada: existing.reuniaoRealizada || lead.reuniaoRealizada,
+        propostaEnviada: existing.propostaEnviada || lead.propostaEnviada,
+        vendaFechada: existing.vendaFechada || lead.vendaFechada,
+      });
+    }
+  }
+
+  const allLeads = Array.from(leadMap.values());
+
+  const funnel = {
+    agendadas: allLeads.filter(isAgendada).length,
+    realizadas: allLeads.filter(isRealizada).length,
+    propostas: allLeads.filter(isProposta).length,
+    vendas: allLeads.filter(isVendaGanha).length,
+  };
+
+  const sdrMap = new Map<string, { agendadas: number; realizadas: number }>();
+  const closerMap = new Map<string, { vendas: number; tcv: number }>();
+
+  for (const lead of allLeads) {
+    if (lead.sdr) {
+      const s = sdrMap.get(lead.sdr) ?? { agendadas: 0, realizadas: 0 };
+      if (isAgendada(lead)) s.agendadas++;
+      if (isRealizada(lead)) s.realizadas++;
+      sdrMap.set(lead.sdr, s);
+    }
+    if (lead.closer) {
+      const c = closerMap.get(lead.closer) ?? { vendas: 0, tcv: 0 };
+      if (isVendaGanha(lead)) c.vendas++;
+      closerMap.set(lead.closer, c);
+    }
+  }
+
+  return { funnel, sdrMap, closerMap, totalLeads: allLeads.length };
+}
+
+// ─── VENDAS processing ───────────────────────────────────────────────────────
+// Columns: Cliente, Data Fechamento, Closer, Campanha, Serviço, Plano,
+//          Setup, Mensalidade, Receita Total, Tempo Contrato, LTV, Status
+function processVendas(rows: string[][]): {
+  closers: Map<string, { vendas: number; tcv: number }>;
+  totalVendas: number;
+  totalTcv: number;
+} {
   const result = {
-    marketing: { invested: 0, mqls: 0 },
-    funnel: {
-      agendadas: 0,
-      realizadas: 0,
-      propostas: 0,
-      vendas: 0,
-    },
     closers: new Map<string, { vendas: number; tcv: number }>(),
-    sdrs: new Map<string, { agendadas: number; realizadas: number }>(),
+    totalVendas: 0,
+    totalTcv: 0,
   };
 
   if (rows.length < 2) return result;
-
   const hmap = headerMap(rows[0]);
 
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
-    if (r.length < 2) continue;
+    if (!r || r.length < 2) continue;
+    const cliente = cellVal(r, hmap, "cliente");
+    if (!cliente) continue;
 
-    // A tabela tem: Categoria, Nome, Valor 1, Valor 2
-    // Pode não ter os headers exatos, vamos tentar pelos índices se hmap falhar
-    let cat = cellVal(r, hmap, "categoria").toLowerCase();
-    let nome = cellVal(r, hmap, "nome");
-    let val1 = parseBR(cellVal(r, hmap, "valor 1"));
-    let val2 = parseBR(cellVal(r, hmap, "valor 2"));
+    const closer = cellVal(r, hmap, "closer");
+    const setup = parseBR(cellVal(r, hmap, "setup"));
+    const mensalidade = parseBR(cellVal(r, hmap, "mensalidade"));
+    const tempoStr = cellVal(r, hmap, "tempo contrato");
+    const tempoMeses = parseFloat(tempoStr.replace(",", ".")) || 0;
+    const receitaTotal =
+      parseBR(cellVal(r, hmap, "receita total")) ||
+      setup + mensalidade * tempoMeses;
+    const ltv = parseBR(cellVal(r, hmap, "ltv")) || receitaTotal;
 
-    // Fallback if headers don't match exact names
-    if (!cat && r[0]) cat = r[0].toLowerCase();
-    if (!nome && r[1]) nome = r[1];
-    if (val1 === 0 && r[2]) val1 = parseBR(r[2]);
-    if (val2 === 0 && r[3]) val2 = parseBR(r[3]);
+    // "vendas" = setup (first payment), TCV = LTV over contract term
+    const vendaValor = setup || receitaTotal;
+    const tcvValor = ltv || receitaTotal;
 
-    if (!cat) continue;
+    result.totalVendas += vendaValor;
+    result.totalTcv += tcvValor;
 
-    if (cat.includes("marketing")) {
-      if (nome.toLowerCase().includes("invest")) result.marketing.invested += val1;
-      if (nome.toLowerCase().includes("mql")) result.marketing.mqls += val1;
-    } 
-    else if (cat.includes("funil") || cat.includes("funnel")) {
-      if (nome.toLowerCase().includes("agendada")) result.funnel.agendadas += val1;
-      if (nome.toLowerCase().includes("realizada")) result.funnel.realizadas += val1;
-      if (nome.toLowerCase().includes("proposta")) result.funnel.propostas += val1;
-      if (nome.toLowerCase().includes("venda") || nome.toLowerCase().includes("contrato")) result.funnel.vendas += val1;
-    }
-    else if (cat.includes("closer")) {
-      const current = result.closers.get(nome) || { vendas: 0, tcv: 0 };
-      current.vendas += val1;
-      current.tcv += val2;
-      result.closers.set(nome, current);
-    }
-    else if (cat.includes("sdr")) {
-      const current = result.sdrs.get(nome) || { agendadas: 0, realizadas: 0 };
-      current.agendadas += val1;
-      current.realizadas += val2;
-      result.sdrs.set(nome, current);
+    if (closer) {
+      const c = result.closers.get(closer) ?? { vendas: 0, tcv: 0 };
+      c.vendas += vendaValor;
+      c.tcv += tcvValor;
+      result.closers.set(closer, c);
     }
   }
 
@@ -164,23 +318,27 @@ function processDadosDiarios(rows: string[][]) {
 // ─── Fetch CSV ───────────────────────────────────────────────────────────────
 async function fetchCSV(gid: string): Promise<string[][]> {
   const url = csvExportUrl(gid);
-  const res = await fetch(url, { redirect: "follow" });
-  if (!res.ok) {
-    console.error(`Failed to fetch sheet gid=${gid}: ${res.status}`);
+  try {
+    const res = await fetch(url, { redirect: "follow" });
+    if (!res.ok) {
+      console.error(`[Sheets] Failed gid=${gid}: HTTP ${res.status}`);
+      return [];
+    }
+    const text = await res.text();
+    if (text.trim().startsWith("<!DOCTYPE") || text.trim().startsWith("<html")) {
+      console.error(`[Sheets] gid=${gid} returned HTML — check sharing settings`);
+      return [];
+    }
+    return parseCSV(text);
+  } catch (e) {
+    console.error(`[Sheets] Fetch error gid=${gid}:`, e);
     return [];
   }
-  const text = await res.text();
-  if (text.trim().startsWith("<!DOCTYPE") || text.trim().startsWith("<html")) {
-    console.error(`Sheet gid=${gid} returned HTML — check sharing settings`);
-    return [];
-  }
-  return parseCSV(text);
 }
 
 // ─── Main server function ────────────────────────────────────────────────────
 export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handler(
   async (): Promise<DashboardData> => {
-    // Return cached data if fresh
     if (cachedData && Date.now() - cachedAt < CACHE_TTL_MS) {
       console.log("[Dashboard] Cache hit (age:", Math.round((Date.now() - cachedAt) / 1000), "s)");
       return cachedData;
@@ -188,37 +346,58 @@ export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handle
 
     console.log("[Dashboard] Fetching fresh data from Google Sheets...");
 
-    const [metaRawRows, dadosDiariosRows] = await Promise.all([
-      fetchCSV(SHEET_GIDS.META_RAW),
-      fetchCSV(SHEET_GIDS.DADOS_DIARIOS),
-    ]);
+    const [metaRawRows, ghlRawRows, dadosDiariosRows, vendasRows, ghlFunnel] =
+      await Promise.all([
+        fetchCSV(SHEET_GIDS.META_RAW),
+        fetchCSV(SHEET_GIDS.GHL_RAW),
+        fetchCSV(SHEET_GIDS.DADOS_DIARIOS),
+        fetchCSV(SHEET_GIDS.VENDAS),
+        getGhlFunnel(), // live CRM funnel (own 1-hour cache)
+      ]);
 
     const meta = processMetaRaw(metaRawRows);
-    const manual = processDadosDiarios(dadosDiariosRows);
+    const leads = processLeads(ghlRawRows, dadosDiariosRows);
+    const vendas = processVendas(vendasRows);
 
-    // Merge manual data with automatic data from META_RAW if manual is missing
-    const invested = manual.marketing.invested > 0 ? manual.marketing.invested : meta.invested;
-    const mqls = manual.marketing.mqls > 0 ? manual.marketing.mqls : meta.leads;
+    console.log("[Dashboard] meta:", meta);
+    console.log("[Dashboard] leads:", leads.totalLeads, "unique, funnel:", leads.funnel);
+    console.log("[Dashboard] vendas:", vendas.totalVendas, "TCV:", vendas.totalTcv);
 
+    // Invested + MQLs: Meta Ads data is the source of truth for ad spend.
+    // Total leads from the live CRM funnel (GHL) when available, else the sheets.
+    const crmTotalLeads = ghlFunnel?.totalLeads ?? leads.totalLeads;
+    const invested = meta.invested;
+    const mqls = meta.leads > 0 ? meta.leads : crmTotalLeads;
     const cpmql = mqls > 0 ? invested / mqls : 0;
 
-    // Build closers
+    // Closers: VENDAS tab is the source of truth for revenue.
+    // Fall back to lead-count data if VENDAS is empty.
     const closers: DashboardData["closers"] = [];
     let totalVendas = 0;
     let totalTcv = 0;
-    
-    if (manual.closers.size > 0) {
-      for (const [name, stats] of manual.closers) {
+
+    if (vendas.closers.size > 0) {
+      totalVendas = vendas.totalVendas;
+      totalTcv = vendas.totalTcv;
+      for (const [name, stats] of vendas.closers) {
+        closers.push({
+          name,
+          vendas: { value: stats.vendas, goal: 23000 },
+          tcv: { value: stats.tcv, goal: 50000 },
+        });
+      }
+    } else if (leads.closerMap.size > 0) {
+      for (const [name, stats] of leads.closerMap) {
         totalVendas += stats.vendas;
         totalTcv += stats.tcv;
         closers.push({
           name,
-          vendas: { value: stats.vendas, goal: 23000 }, // Goals will be overridden by client GoalsPanel
+          vendas: { value: stats.vendas, goal: 23000 },
           tcv: { value: stats.tcv, goal: 50000 },
         });
       }
     } else {
-      // Defaults if no manual data yet
+      // Default placeholders until VENDAS tab is populated
       for (const name of ["Leonardo", "Gustavo", "Thiago"]) {
         closers.push({ name, vendas: { value: 0, goal: 23000 }, tcv: { value: 0, goal: 50000 } });
       }
@@ -226,10 +405,10 @@ export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handle
 
     const roas = invested > 0 ? totalVendas / invested : 0;
 
-    // Build SDRs
+    // SDRs from lead sheets
     const sdrs: DashboardData["sdrs"] = [];
-    if (manual.sdrs.size > 0) {
-      for (const [name, stats] of manual.sdrs) {
+    if (leads.sdrMap.size > 0) {
+      for (const [name, stats] of leads.sdrMap) {
         sdrs.push({ name, scheduled: stats.agendadas, completed: stats.realizadas });
       }
     } else {
@@ -239,8 +418,8 @@ export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handle
     const data: DashboardData = {
       salesGoal: { value: totalVendas, goal: 235000 },
       tcvGoal: { value: totalTcv, goal: 750000 },
-      openValue: totalVendas, // Simplified
-      openTcv: totalTcv, // Simplified
+      openValue: totalVendas,
+      openTcv: totalTcv,
       marketing: {
         invested,
         mqls,
@@ -249,11 +428,12 @@ export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handle
         marketingSales: totalVendas,
         roas,
       },
-      funnel: [
-        { stage: "Reunião Agendada", value: manual.funnel.agendadas },
-        { stage: "Reunião Realizada", value: manual.funnel.realizadas },
-        { stage: "Proposta Apresentada", value: manual.funnel.propostas },
-        { stage: "Contrato Enviado", value: manual.funnel.vendas },
+      // Funnel: prefer the live CRM (GHL) data; fall back to the sheets.
+      funnel: ghlFunnel?.stages ?? [
+        { stage: "Reunião Agendada", value: leads.funnel.agendadas },
+        { stage: "Reunião Realizada", value: leads.funnel.realizadas },
+        { stage: "Proposta Apresentada", value: leads.funnel.propostas },
+        { stage: "Contrato Enviado", value: leads.funnel.vendas },
       ],
       closers,
       sdrs,
@@ -261,10 +441,7 @@ export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handle
 
     cachedData = data;
     cachedAt = Date.now();
-    console.log(
-      "[Dashboard] Cached. Manual Mode. Invested:", invested,
-      "Vendas:", totalVendas,
-    );
+    console.log("[Dashboard] Done. Invested:", invested, "MQLs:", mqls, "Leads:", leads.totalLeads);
 
     return data;
   },

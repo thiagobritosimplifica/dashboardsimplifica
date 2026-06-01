@@ -14,15 +14,15 @@ export function SalesFunnel({ stages }: { stages: Stage[] }) {
       <h3 className="font-display text-sm uppercase tracking-widest text-muted-foreground mb-4">Funil de Vendas</h3>
       <div className="flex-1 flex flex-col justify-center gap-2">
         {stages.map((s, i) => {
-          const w = 35 + (s.value / max) * 65;
+          const w = max > 0 ? 42 + (s.value / max) * 46 : 42;
           return (
             <div key={s.stage} className="flex items-center justify-center">
               <div
-                className="relative flex items-center justify-between px-5 py-3 rounded-md font-display font-semibold transition-all"
+                className="relative flex items-center justify-between gap-3 pl-8 pr-12 py-3 rounded-md font-display font-semibold transition-all"
                 style={{
                   width: `${w}%`,
                   background: shades[i] ?? shades[shades.length - 1],
-                  clipPath: "polygon(4% 0, 96% 0, 92% 100%, 8% 100%)",
+                  clipPath: "polygon(2% 0, 98% 0, 95% 100%, 5% 100%)",
                   boxShadow: "0 4px 14px oklch(0.1 0.05 260 / 0.6)",
                 }}
               >
