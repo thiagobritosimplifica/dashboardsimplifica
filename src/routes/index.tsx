@@ -1,0 +1,157 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { useQuery } from "@tanstack/react-query";
+import { RefreshCw } from "lucide-react";
+import { toast } from "sonner";
+import logo from "@/assets/logo-simplifica.png";
+import { MOCK, type DashboardData, formatBRL } from "@/lib/dashboard-data";
+import { parseXlsx } from "@/lib/parse-xlsx";
+import { fetchDashboardFromSheets } from "@/lib/sheets.functions";
+import { ProgressGoal } from "@/components/dashboard/ProgressGoal";
+import { CloserCard } from "@/components/dashboard/CloserCard";
+import { MarketingStrip } from "@/components/dashboard/MarketingStrip";
+import { SalesFunnel } from "@/components/dashboard/SalesFunnel";
+import { SdrMeetings } from "@/components/dashboard/SdrMeetings";
+import { CloserRanking } from "@/components/dashboard/CloserRanking";
+import { SdrRanking } from "@/components/dashboard/SdrRanking";
+import { FileUpload } from "@/components/dashboard/FileUpload";
+import { Toaster } from "@/components/ui/sonner";
+
+export const Route = createFileRoute("/")({
+  head: () => ({
+    meta: [
+      { title: "Simplifica — Dashboard Comercial" },
+      { name: "description", content: "Visão em tempo real de metas, funil e ranking do time comercial da Simplifica." },
+    ],
+  }),
+  component: Dashboard,
+});
+
+function Dashboard() {
+  const fetchSheets = useServerFn(fetchDashboardFromSheets);
+  const [data, setData] = useState<DashboardData>(MOCK);
+
+  const query = useQuery({
+    queryKey: ["dashboard-sheets"],
+    queryFn: () => fetchSheets(),
+    refetchInterval: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+
+  useEffect(() => {
+    if (query.data) setData(query.data);
+  }, [query.data]);
+
+  useEffect(() => {
+    if (query.error) {
+      console.error(query.error);
+      toast.error("Não foi possível ler a planilha do Google Sheets");
+    }
+  }, [query.error]);
+
+  const handleFile = async (file: File) => {
+    try {
+      const parsed = await parseXlsx(file);
+      setData(parsed);
+      toast.success("Planilha importada com sucesso");
+    } catch (e) {
+      console.error(e);
+      toast.error("Não foi possível ler a planilha");
+    }
+  };
+
+  return (
+    <div className="min-h-screen w-full p-4 lg:p-6 xl:p-8">
+      <Toaster theme="dark" position="top-right" />
+      <header className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-4">
+          <img src={logo} alt="Simplifica" className="h-10 invert" />
+          <div className="hidden md:block h-8 w-px bg-border" />
+          <div className="hidden md:block">
+            <div className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground">Dashboard Comercial</div>
+            <h1 className="font-display text-lg font-semibold">Visão geral em tempo real</h1>
+          </div>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="hidden sm:block text-right">
+            <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+              {new Date().toLocaleDateString("pt-BR", { weekday: "long" })}
+            </div>
+            <div className="font-display text-sm">
+              {new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })}
+            </div>
+          </div>
+          <button
+            onClick={() => query.refetch()}
+            className="glass rounded-lg p-2 hover:bg-secondary/40 transition-colors"
+            title="Atualizar dados da planilha"
+            disabled={query.isFetching}
+          >
+            <RefreshCw size={16} className={query.isFetching ? "animate-spin" : ""} />
+          </button>
+          <FileUpload onFile={handleFile} />
+        </div>
+      </header>
+
+      <main className="grid grid-cols-12 gap-4 xl:gap-5">
+        {/* SECTION 1: Goals */}
+        <section className="col-span-12 xl:col-span-9 glass rounded-2xl p-6">
+          <div className="grid lg:grid-cols-[1fr_auto] gap-6 items-center">
+            <div className="space-y-5">
+              <ProgressGoal label="Meta de Vendas" value={data.salesGoal.value} goal={data.salesGoal.goal} />
+              <ProgressGoal label="Meta de TCV" value={data.tcvGoal.value} goal={data.tcvGoal.goal} accent="cyan" />
+            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-1 gap-3 lg:min-w-[220px] lg:border-l lg:pl-6 border-border">
+              <Stat label="Vendas no Mês" value={formatBRL(data.salesGoal.value)} highlight />
+              <Stat label="TCV" value={formatBRL(data.tcvGoal.value)} />
+              <Stat label="Valor em Aberto" value={formatBRL(data.openValue)} />
+              <Stat label="TCV em Aberto" value={formatBRL(data.openTcv)} />
+            </div>
+          </div>
+        </section>
+
+        {/* SECTION 6: Closer Ranking (top right) */}
+        <section className="col-span-12 xl:col-span-3">
+          <CloserRanking closers={data.closers} />
+        </section>
+
+        {/* SECTION 2: Closer Cards */}
+        <section className="col-span-12 xl:col-span-9 grid grid-cols-1 md:grid-cols-3 gap-4">
+          {data.closers.map((c) => <CloserCard key={c.name} closer={c} />)}
+        </section>
+
+        {/* SECTION 7: SDR Ranking */}
+        <section className="col-span-12 xl:col-span-3">
+          <SdrRanking sdrs={data.sdrs} />
+        </section>
+
+        {/* SECTION 3: Marketing strip */}
+        <section className="col-span-12">
+          <MarketingStrip m={data.marketing} />
+        </section>
+
+        {/* SECTION 4 + 5: Funnel + SDR meetings */}
+        <section className="col-span-12 lg:col-span-7">
+          <SalesFunnel stages={data.funnel} />
+        </section>
+        <section className="col-span-12 lg:col-span-5">
+          <SdrMeetings sdrs={data.sdrs} />
+        </section>
+      </main>
+
+      <footer className="mt-6 text-center text-[11px] text-muted-foreground/60 tracking-widest uppercase">
+        Simplifica · Aceleradora de Negócios
+      </footer>
+    </div>
+  );
+}
+
+function Stat({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+  return (
+    <div className="rounded-xl bg-secondary/30 border border-border px-4 py-3">
+      <div className="text-[10px] uppercase tracking-widest text-muted-foreground">{label}</div>
+      <div className={`font-display font-bold tabular-nums mt-1 ${highlight ? "text-xl text-gradient-blue" : "text-base"}`}>{value}</div>
+    </div>
+  );
+}
