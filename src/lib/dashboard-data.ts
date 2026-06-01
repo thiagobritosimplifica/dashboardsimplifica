@@ -4,6 +4,24 @@ export type CloserStats = {
   tcv: { value: number; goal: number };
 };
 
+// Canonical closer roster — always shown on the dashboard, even with no sales.
+export const CLOSERS = ["Leonardo", "Gustavo", "Thiago"] as const;
+
+/** First name, lowercased and accent-stripped — used for photo filenames. */
+export function closerSlug(name: string): string {
+  return name
+    .trim()
+    .split(/\s+/)[0]
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "");
+}
+
+/** Public path to a closer's photo. Drop files in `public/closers/<slug>.png`. */
+export function closerPhoto(name: string): string {
+  return `/closers/${closerSlug(name)}.png`;
+}
+
 export type SdrStats = {
   name: string;
   scheduled: number;

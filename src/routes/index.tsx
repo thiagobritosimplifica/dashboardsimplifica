@@ -38,11 +38,17 @@ function applyGoals(data: DashboardData, goals: GoalsConfig): DashboardData {
     salesGoal: { ...data.salesGoal, goal: goals.salesGoal },
     tcvGoal: { ...data.tcvGoal, goal: goals.tcvGoal },
     marketing: { ...data.marketing, mqlsGoal: goals.mqlsGoal },
-    closers: data.closers.map((c) => ({
-      ...c,
-      vendas: { ...c.vendas, goal: goals.closerVendasGoal },
-      tcv: { ...c.tcv, goal: goals.closerTcvGoal },
-    })),
+    closers: data.closers.map((c) => {
+      const cg = goals.closerGoals[c.name] ?? {
+        vendasGoal: goals.closerVendasGoal,
+        tcvGoal: goals.closerTcvGoal,
+      };
+      return {
+        ...c,
+        vendas: { ...c.vendas, goal: cg.vendasGoal },
+        tcv: { ...c.tcv, goal: cg.tcvGoal },
+      };
+    }),
   };
 }
 

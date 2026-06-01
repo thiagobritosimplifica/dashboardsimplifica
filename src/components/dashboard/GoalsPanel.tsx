@@ -1,20 +1,32 @@
 import { Settings } from "lucide-react";
 import { useState, useEffect } from "react";
+import { CLOSERS } from "@/lib/dashboard-data";
+
+export type CloserGoal = { vendasGoal: number; tcvGoal: number };
 
 export type GoalsConfig = {
   salesGoal: number;
   tcvGoal: number;
   mqlsGoal: number;
+  // Fallback defaults for closers without an explicit per-closer goal.
   closerVendasGoal: number;
   closerTcvGoal: number;
+  // Per-closer goals, keyed by closer name.
+  closerGoals: Record<string, CloserGoal>;
 };
+
+const DEFAULT_CLOSER_VENDAS = 23000;
+const DEFAULT_CLOSER_TCV = 50000;
 
 const DEFAULT_GOALS: GoalsConfig = {
   salesGoal: 235000,
   tcvGoal: 750000,
   mqlsGoal: 400,
-  closerVendasGoal: 23000,
-  closerTcvGoal: 50000,
+  closerVendasGoal: DEFAULT_CLOSER_VENDAS,
+  closerTcvGoal: DEFAULT_CLOSER_TCV,
+  closerGoals: Object.fromEntries(
+    CLOSERS.map((name) => [name, { vendasGoal: DEFAULT_CLOSER_VENDAS, tcvGoal: DEFAULT_CLOSER_TCV }])
+  ),
 };
 
 const STORAGE_KEY = "simplifica-goals";
@@ -24,7 +36,13 @@ export function loadGoals(): GoalsConfig {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_GOALS;
-    return { ...DEFAULT_GOALS, ...JSON.parse(raw) };
+    const parsed = JSON.parse(raw) as Partial<GoalsConfig>;
+    return {
+      ...DEFAULT_GOALS,
+      ...parsed,
+      // Deep-merge closer goals so the canonical roster always has entries.
+      closerGoals: { ...DEFAULT_GOALS.closerGoals, ...(parsed.closerGoals ?? {}) },
+    };
   } catch {
     return DEFAULT_GOALS;
   }
@@ -59,6 +77,19 @@ export function GoalsPanel({ onSave }: { onSave: (goals: GoalsConfig) => void })
 
   const updateField = (field: keyof GoalsConfig, value: string) => {
     setGoals((prev) => ({ ...prev, [field]: parseInputBRL(value) }));
+  };
+
+  const updateCloserGoal = (name: string, field: keyof CloserGoal, value: string) => {
+    setGoals((prev) => ({
+      ...prev,
+      closerGoals: {
+        ...prev.closerGoals,
+        [name]: {
+          ...(prev.closerGoals[name] ?? { vendasGoal: prev.closerVendasGoal, tcvGoal: prev.closerTcvGoal }),
+          [field]: parseInputBRL(value),
+        },
+      },
+    }));
   };
 
   if (!open) {
@@ -121,24 +152,37 @@ export function GoalsPanel({ onSave }: { onSave: (goals: GoalsConfig) => void })
               </div>
             </div>
 
-            {/* Metas por Closer */}
+            {/* Metas por Closer (individuais) */}
             <div>
               <h3 className="text-xs uppercase tracking-widest text-muted-foreground font-display mb-3">
                 Metas por Closer
               </h3>
-              <div className="grid grid-cols-2 gap-3">
-                <GoalInput
-                  label="Meta de Vendas"
-                  value={goals.closerVendasGoal}
-                  onChange={(v) => updateField("closerVendasGoal", v)}
-                  prefix="R$"
-                />
-                <GoalInput
-                  label="Meta de TCV"
-                  value={goals.closerTcvGoal}
-                  onChange={(v) => updateField("closerTcvGoal", v)}
-                  prefix="R$"
-                />
+              <div className="space-y-4">
+                {CLOSERS.map((name) => {
+                  const cg = goals.closerGoals[name] ?? {
+                    vendasGoal: goals.closerVendasGoal,
+                    tcvGoal: goals.closerTcvGoal,
+                  };
+                  return (
+                    <div key={name}>
+                      <div className="text-sm font-display font-semibold mb-2">{name}</div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <GoalInput
+                          label="Meta de Vendas"
+                          value={cg.vendasGoal}
+                          onChange={(v) => updateCloserGoal(name, "vendasGoal", v)}
+                          prefix="R$"
+                        />
+                        <GoalInput
+                          label="Meta de TCV"
+                          value={cg.tcvGoal}
+                          onChange={(v) => updateCloserGoal(name, "tcvGoal", v)}
+                          prefix="R$"
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>

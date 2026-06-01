@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import type { DashboardData } from "./dashboard-data";
+import { CLOSERS } from "./dashboard-data";
 import { getGhlFunnel } from "./ghl.functions";
 
 // ─── Configuration ───────────────────────────────────────────────────────────
@@ -430,36 +431,24 @@ export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handle
     // A row is created there automatically whenever a deal is won in GHL, so
     // "Meta de Vendas" reflects closed sales regardless of whether the Closer
     // column is filled in yet.
-    const closers: DashboardData["closers"] = [];
-    let totalVendas = 0;
-    let totalTcv = 0;
+    const totalVendas = vendas.totalVendas;
+    const totalTcv = vendas.totalTcv;
 
-    if (vendas.totalVendas > 0 || vendas.closers.size > 0) {
-      // Totals always come from VENDAS when it has data.
-      totalVendas = vendas.totalVendas;
-      totalTcv = vendas.totalTcv;
-
-      if (vendas.closers.size > 0) {
-        // Per-closer breakdown when the Closer column is filled.
-        for (const [name, stats] of vendas.closers) {
-          closers.push({
-            name,
-            vendas: { value: stats.vendas, goal: 23000 },
-            tcv: { value: stats.tcv, goal: 50000 },
-          });
-        }
-      } else {
-        // Sales exist but no closer attribution yet — show placeholders.
-        for (const name of ["Leonardo", "Gustavo", "Thiago"]) {
-          closers.push({ name, vendas: { value: 0, goal: 23000 }, tcv: { value: 0, goal: 50000 } });
-        }
-      }
-    } else {
-      // No VENDAS data yet — default placeholders.
-      for (const name of ["Leonardo", "Gustavo", "Thiago"]) {
-        closers.push({ name, vendas: { value: 0, goal: 23000 }, tcv: { value: 0, goal: 50000 } });
-      }
-    }
+    // Always show the full closer roster (canonical + any extra name found in
+    // VENDAS), filling each closer's sales from VENDAS — 0 when they have none.
+    // Goals here are placeholders; the client GoalsPanel overrides them.
+    const closerNames = [
+      ...CLOSERS,
+      ...[...vendas.closers.keys()].filter((n) => !CLOSERS.includes(n as (typeof CLOSERS)[number])),
+    ];
+    const closers: DashboardData["closers"] = closerNames.map((name) => {
+      const stats = vendas.closers.get(name) ?? { vendas: 0, tcv: 0 };
+      return {
+        name,
+        vendas: { value: stats.vendas, goal: 23000 },
+        tcv: { value: stats.tcv, goal: 50000 },
+      };
+    });
 
     const roas = invested > 0 ? totalVendas / invested : 0;
 

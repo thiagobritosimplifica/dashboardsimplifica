@@ -1,4 +1,5 @@
 import { Trophy } from "lucide-react";
+import { CloserAvatar } from "./CloserAvatar";
 import type { CloserStats } from "@/lib/dashboard-data";
 import { formatBRL } from "@/lib/dashboard-data";
 
@@ -10,7 +11,6 @@ function PodiumItem({
   place: 1 | 2 | 3;
 }) {
   const total = closer.vendas.value;
-  const initials = closer.name.slice(0, 2).toUpperCase();
   const config = {
     1: { medal: "🥇", h: "h-32", color: "var(--gold)", ring: "oklch(0.85 0.16 90 / 0.6)", scale: "scale-110", size: "h-20 w-20", text: "text-lg" },
     2: { medal: "🥈", h: "h-20", color: "var(--silver)", ring: "oklch(0.82 0.02 250 / 0.5)", scale: "", size: "h-14 w-14", text: "text-sm" },
@@ -20,16 +20,14 @@ function PodiumItem({
   return (
     <div className={`flex flex-col items-center gap-2 ${config.scale}`}>
       <div className="text-2xl">{config.medal}</div>
-      <div
-        className={`${config.size} rounded-full grid place-items-center font-display font-bold`}
+      <CloserAvatar
+        name={closer.name}
+        className={config.size}
         style={{
-          background: "var(--gradient-blue)",
           boxShadow: `0 0 18px ${config.ring}`,
           border: `2px solid ${config.color}`,
         }}
-      >
-        {initials}
-      </div>
+      />
       <div className="text-center">
         <div className={`font-display font-semibold ${config.text}`}>{closer.name}</div>
         <div className="text-xs text-cyan tabular-nums">{formatBRL(total)}</div>
