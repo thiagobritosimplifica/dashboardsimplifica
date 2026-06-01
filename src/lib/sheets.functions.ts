@@ -370,34 +370,36 @@ export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handle
     const mqls = meta.leads > 0 ? meta.leads : crmTotalLeads;
     const cpmql = mqls > 0 ? invested / mqls : 0;
 
-    // Closers: VENDAS tab is the source of truth for revenue.
-    // Fall back to lead-count data if VENDAS is empty.
+    // Sales + TCV: the VENDAS tab is the source of truth for closed revenue.
+    // A row is created there automatically whenever a deal is won in GHL, so
+    // "Meta de Vendas" reflects closed sales regardless of whether the Closer
+    // column is filled in yet.
     const closers: DashboardData["closers"] = [];
     let totalVendas = 0;
     let totalTcv = 0;
 
-    if (vendas.closers.size > 0) {
+    if (vendas.totalVendas > 0 || vendas.closers.size > 0) {
+      // Totals always come from VENDAS when it has data.
       totalVendas = vendas.totalVendas;
       totalTcv = vendas.totalTcv;
-      for (const [name, stats] of vendas.closers) {
-        closers.push({
-          name,
-          vendas: { value: stats.vendas, goal: 23000 },
-          tcv: { value: stats.tcv, goal: 50000 },
-        });
-      }
-    } else if (leads.closerMap.size > 0) {
-      for (const [name, stats] of leads.closerMap) {
-        totalVendas += stats.vendas;
-        totalTcv += stats.tcv;
-        closers.push({
-          name,
-          vendas: { value: stats.vendas, goal: 23000 },
-          tcv: { value: stats.tcv, goal: 50000 },
-        });
+
+      if (vendas.closers.size > 0) {
+        // Per-closer breakdown when the Closer column is filled.
+        for (const [name, stats] of vendas.closers) {
+          closers.push({
+            name,
+            vendas: { value: stats.vendas, goal: 23000 },
+            tcv: { value: stats.tcv, goal: 50000 },
+          });
+        }
+      } else {
+        // Sales exist but no closer attribution yet — show placeholders.
+        for (const name of ["Leonardo", "Gustavo", "Thiago"]) {
+          closers.push({ name, vendas: { value: 0, goal: 23000 }, tcv: { value: 0, goal: 50000 } });
+        }
       }
     } else {
-      // Default placeholders until VENDAS tab is populated
+      // No VENDAS data yet — default placeholders.
       for (const name of ["Leonardo", "Gustavo", "Thiago"]) {
         closers.push({ name, vendas: { value: 0, goal: 23000 }, tcv: { value: 0, goal: 50000 } });
       }
