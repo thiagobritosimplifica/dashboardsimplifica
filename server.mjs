@@ -16,5 +16,5 @@ app.all("/*", (c) => handler.fetch(c.req.raw));
 
 const port = Number(process.env.PORT) || 3000;
 serve({ fetch: app.fetch, port, hostname: "0.0.0.0" }, (info) => {
-  console.log(`Server running on http://0.0.0.0:${info.port}`);
+  console.log(`Server running on http://:${info.port}`);
 });

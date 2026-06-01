@@ -5,9 +5,7 @@ WORKDIR /app
 # Copia só o manifesto primeiro (melhor cache)
 COPY package.json ./
 
-# O bun.lock original aponta para o registry PRIVADO da Lovable
-# (europe-west1-npm.pkg.dev) e dá 403 fora daquele ambiente.
-# Removemos e resolvemos do npm publico.
+# Resolve as dependências do npm público
 RUN rm -f bun.lock && bun install --registry https://registry.npmjs.org
 
 COPY . .
