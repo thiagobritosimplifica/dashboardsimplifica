@@ -260,7 +260,6 @@ export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handle
     const ghl = processGhlRaw(ghlRawRows);
 
     const cpmql = meta.leads > 0 ? meta.invested / meta.leads : 0;
-    const roas = meta.invested > 0 ? ghl.openValue / meta.invested : 0;
 
     // Build closers — if none in GHL, use defaults with zero
     const closers: DashboardData["closers"] = [];
@@ -284,6 +283,8 @@ export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handle
         });
       }
     }
+
+    const roas = meta.invested > 0 ? totalVendas / meta.invested : 0;
 
     // Build SDRs
     const sdrs: DashboardData["sdrs"] = [];
@@ -309,7 +310,7 @@ export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handle
         mqls: meta.leads || ghl.totalLeads,
         mqlsGoal: 400,
         cpmol: cpmql,
-        marketingSales: ghl.openValue,
+        marketingSales: totalVendas,
         roas,
       },
       funnel: [
