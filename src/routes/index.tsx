@@ -39,9 +39,8 @@ function applyGoals(data: DashboardData, goals: GoalsConfig): DashboardData {
     marketing: { ...data.marketing, mqlsGoal: goals.mqlsGoal },
     closers: data.closers.map((c) => ({
       ...c,
-      mrr: { ...c.mrr, goal: goals.closerMrrGoal },
-      onboarding: { ...c.onboarding, goal: goals.closerOnboardingGoal },
-      total: { ...c.total, goal: goals.closerTotalGoal },
+      vendas: { ...c.vendas, goal: goals.closerVendasGoal },
+      tcv: { ...c.tcv, goal: goals.closerTcvGoal },
     })),
   };
 }

@@ -5,18 +5,16 @@ export type GoalsConfig = {
   salesGoal: number;
   tcvGoal: number;
   mqlsGoal: number;
-  closerMrrGoal: number;
-  closerOnboardingGoal: number;
-  closerTotalGoal: number;
+  closerVendasGoal: number;
+  closerTcvGoal: number;
 };
 
 const DEFAULT_GOALS: GoalsConfig = {
   salesGoal: 235000,
   tcvGoal: 750000,
   mqlsGoal: 400,
-  closerMrrGoal: 40000,
-  closerOnboardingGoal: 40000,
-  closerTotalGoal: 23000,
+  closerVendasGoal: 23000,
+  closerTcvGoal: 50000,
 };
 
 const STORAGE_KEY = "simplifica-goals";
@@ -130,21 +128,15 @@ export function GoalsPanel({ onSave }: { onSave: (goals: GoalsConfig) => void })
               </h3>
               <div className="grid grid-cols-2 gap-3">
                 <GoalInput
-                  label="Meta MRR"
-                  value={goals.closerMrrGoal}
-                  onChange={(v) => updateField("closerMrrGoal", v)}
+                  label="Meta de Vendas"
+                  value={goals.closerVendasGoal}
+                  onChange={(v) => updateField("closerVendasGoal", v)}
                   prefix="R$"
                 />
                 <GoalInput
-                  label="Meta Onboarding"
-                  value={goals.closerOnboardingGoal}
-                  onChange={(v) => updateField("closerOnboardingGoal", v)}
-                  prefix="R$"
-                />
-                <GoalInput
-                  label="Meta Total"
-                  value={goals.closerTotalGoal}
-                  onChange={(v) => updateField("closerTotalGoal", v)}
+                  label="Meta de TCV"
+                  value={goals.closerTcvGoal}
+                  onChange={(v) => updateField("closerTcvGoal", v)}
                   prefix="R$"
                 />
               </div>

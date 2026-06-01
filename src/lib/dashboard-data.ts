@@ -1,8 +1,7 @@
 export type CloserStats = {
   name: string;
-  mrr: { value: number; goal: number };
-  onboarding: { value: number; goal: number };
-  total: { value: number; goal: number };
+  vendas: { value: number; goal: number };
+  tcv: { value: number; goal: number };
 };
 
 export type SdrStats = {
@@ -49,9 +48,9 @@ export const MOCK: DashboardData = {
     { stage: "Contrato Enviado", value: 49 },
   ],
   closers: [
-    { name: "Leonardo", mrr: { value: 24913, goal: 40000 }, onboarding: { value: 21594.5, goal: 40000 }, total: { value: 16401.5, goal: 23000 } },
-    { name: "Gustavo", mrr: { value: 18250, goal: 40000 }, onboarding: { value: 15200, goal: 40000 }, total: { value: 12800, goal: 23000 } },
-    { name: "Thiago", mrr: { value: 14120, goal: 40000 }, onboarding: { value: 11020, goal: 40000 }, total: { value: 9420, goal: 23000 } },
+    { name: "Leonardo", vendas: { value: 16401.5, goal: 23000 }, tcv: { value: 24913, goal: 50000 } },
+    { name: "Gustavo", vendas: { value: 12800, goal: 23000 }, tcv: { value: 18250, goal: 50000 } },
+    { name: "Thiago", vendas: { value: 9420, goal: 23000 }, tcv: { value: 14120, goal: 50000 } },
   ],
   sdrs: [{ name: "Ana Clara", scheduled: 253, completed: 193 }],
 };

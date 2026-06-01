@@ -264,22 +264,23 @@ export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handle
 
     // Build closers — if none in GHL, use defaults with zero
     const closers: DashboardData["closers"] = [];
+    let totalVendas = 0;
+    
     if (ghl.closerMap.size > 0) {
       for (const [name, stats] of ghl.closerMap) {
+        totalVendas += stats.sales;
         closers.push({
           name,
-          mrr: { value: stats.sales * 0.4, goal: 40000 },
-          onboarding: { value: stats.sales * 0.35, goal: 40000 },
-          total: { value: stats.sales, goal: 23000 },
+          vendas: { value: stats.sales, goal: 23000 },
+          tcv: { value: stats.sales, goal: 50000 },
         });
       }
     } else {
       for (const name of ["Leonardo", "Gustavo", "Thiago"]) {
         closers.push({
           name,
-          mrr: { value: 0, goal: 40000 },
-          onboarding: { value: 0, goal: 40000 },
-          total: { value: 0, goal: 23000 },
+          vendas: { value: 0, goal: 23000 },
+          tcv: { value: 0, goal: 50000 },
         });
       }
     }
@@ -299,8 +300,8 @@ export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handle
     }
 
     const data: DashboardData = {
-      salesGoal: { value: meta.invested, goal: 235000 },
-      tcvGoal: { value: ghl.openValue, goal: 750000 },
+      salesGoal: { value: totalVendas, goal: 235000 },
+      tcvGoal: { value: totalVendas, goal: 750000 },
       openValue: ghl.openValue,
       openTcv: ghl.openValue,
       marketing: {

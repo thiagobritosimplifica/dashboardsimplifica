@@ -15,10 +15,9 @@ export function CloserCard({ closer }: { closer: CloserStats }) {
           <div className="font-display text-lg font-semibold">{closer.name}</div>
         </div>
       </div>
-      <div className="grid grid-cols-3 gap-2">
-        <Gauge label="MRR" value={closer.mrr.value} goal={closer.mrr.goal} size={104} />
-        <Gauge label="Onboarding" value={closer.onboarding.value} goal={closer.onboarding.goal} size={104} />
-        <Gauge label="Total" value={closer.total.value} goal={closer.total.goal} size={104} />
+      <div className="grid grid-cols-2 gap-2">
+        <Gauge label="Vendas no mês" value={closer.vendas.value} goal={closer.vendas.goal} size={104} />
+        <Gauge label="TCV" value={closer.tcv.value} goal={closer.tcv.goal} size={104} />
       </div>
     </div>
   );

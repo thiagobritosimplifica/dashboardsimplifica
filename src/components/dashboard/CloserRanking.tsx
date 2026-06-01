@@ -9,7 +9,7 @@ function PodiumItem({
   closer: CloserStats;
   place: 1 | 2 | 3;
 }) {
-  const total = closer.mrr.value + closer.onboarding.value + closer.total.value;
+  const total = closer.vendas.value;
   const initials = closer.name.slice(0, 2).toUpperCase();
   const config = {
     1: { medal: "🥇", h: "h-32", color: "var(--gold)", ring: "oklch(0.85 0.16 90 / 0.6)", scale: "scale-110", size: "h-20 w-20", text: "text-lg" },
@@ -47,7 +47,7 @@ function PodiumItem({
 
 export function CloserRanking({ closers }: { closers: CloserStats[] }) {
   const sorted = [...closers]
-    .sort((a, b) => (b.mrr.value + b.onboarding.value + b.total.value) - (a.mrr.value + a.onboarding.value + a.total.value));
+    .sort((a, b) => b.vendas.value - a.vendas.value);
   const [first, second, third] = sorted;
   return (
     <div className="glass rounded-2xl p-5 h-full">
