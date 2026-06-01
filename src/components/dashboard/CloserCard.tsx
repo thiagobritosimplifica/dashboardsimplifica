@@ -1,12 +1,12 @@
 import { Gauge } from "./Gauge";
-import { CloserAvatar } from "./CloserAvatar";
+import { PersonAvatar } from "./PersonAvatar";
 import type { CloserStats } from "@/lib/dashboard-data";
 
 export function CloserCard({ closer }: { closer: CloserStats }) {
   return (
     <div className="glass rounded-2xl p-5 flex flex-col gap-4">
       <div className="flex items-center gap-3">
-        <CloserAvatar name={closer.name} className="h-11 w-11 text-sm" />
+        <PersonAvatar name={closer.name} className="h-11 w-11 text-sm" />
         <div>
           <div className="text-xs uppercase tracking-widest text-muted-foreground">Closer</div>
           <div className="font-display text-lg font-semibold">{closer.name}</div>

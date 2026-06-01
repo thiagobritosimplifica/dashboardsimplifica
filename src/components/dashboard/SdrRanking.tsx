@@ -1,4 +1,5 @@
 import { Trophy } from "lucide-react";
+import { PersonAvatar } from "./PersonAvatar";
 import type { SdrStats } from "@/lib/dashboard-data";
 
 export function SdrRanking({ sdrs }: { sdrs: SdrStats[] }) {
@@ -14,16 +15,15 @@ export function SdrRanking({ sdrs }: { sdrs: SdrStats[] }) {
       </div>
       <div className="flex flex-col items-center justify-center gap-3 py-4">
         <div className="text-3xl">🥇</div>
-        <div
-          className="h-20 w-20 rounded-full grid place-items-center font-display font-bold text-xl"
+        <PersonAvatar
+          name={top.name}
+          initials={initials}
+          className="h-20 w-20 text-xl"
           style={{
-            background: "var(--gradient-blue)",
             boxShadow: "0 0 24px oklch(0.85 0.16 90 / 0.5)",
             border: "2px solid var(--gold)",
           }}
-        >
-          {initials}
-        </div>
+        />
         <div className="font-display font-semibold text-lg">{top.name}</div>
         <div className="grid grid-cols-2 gap-3 w-full text-center mt-2">
           <div className="rounded-lg bg-secondary/40 py-2">

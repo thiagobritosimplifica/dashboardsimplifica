@@ -7,19 +7,18 @@ export type CloserStats = {
 // Canonical closer roster — always shown on the dashboard, even with no sales.
 export const CLOSERS = ["Leonardo", "Gustavo", "Thiago"] as const;
 
-/** First name, lowercased and accent-stripped — used for photo filenames. */
-export function closerSlug(name: string): string {
+/**
+ * Photo filename slug for any person (closer or SDR): full name, lowercased,
+ * accent-stripped, spaces removed. e.g. "Ana Clara" -> "anaclara".
+ * Photos live in `public/closers/<slug>.<jpeg|jpg|png|webp>`.
+ */
+export function personSlug(name: string): string {
   return name
     .trim()
-    .split(/\s+/)[0]
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "");
-}
-
-/** Public path to a closer's photo. Drop files in `public/closers/<slug>.png`. */
-export function closerPhoto(name: string): string {
-  return `/closers/${closerSlug(name)}.png`;
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/\s+/g, "");
 }
 
 export type SdrStats = {

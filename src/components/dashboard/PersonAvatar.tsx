@@ -1,27 +1,29 @@
 import { useState } from "react";
-import { closerSlug } from "@/lib/dashboard-data";
+import { personSlug } from "@/lib/dashboard-data";
 
-// Extensions tried, in order, when looking for a closer photo.
+// Extensions tried, in order, when looking for a person's photo.
 const EXTS = ["jpeg", "jpg", "png", "webp"] as const;
 
 /**
- * Round closer avatar. Tries to load `public/closers/<slug>.<ext>` for each
- * supported extension; if none load it falls back to the closer's initials.
- * Drop photos in that folder named after the closer's first name (lowercase),
- * e.g. `public/closers/thiago.jpeg`.
+ * Round avatar for a closer or SDR. Tries to load
+ * `public/closers/<slug>.<ext>` for each supported extension; if none load it
+ * falls back to the person's initials. Drop photos in that folder named after
+ * the full name (lowercase, no spaces), e.g. `public/closers/anaclara.jpeg`.
  */
-export function CloserAvatar({
+export function PersonAvatar({
   name,
+  initials,
   className = "",
   style,
 }: {
   name: string;
+  initials?: string;
   className?: string;
   style?: React.CSSProperties;
 }) {
   const [extIndex, setExtIndex] = useState(0);
-  const initials = name.slice(0, 2).toUpperCase();
-  const slug = closerSlug(name);
+  const fallback = initials ?? name.slice(0, 2).toUpperCase();
+  const slug = personSlug(name);
   const exhausted = extIndex >= EXTS.length;
 
   return (
@@ -39,7 +41,7 @@ export function CloserAvatar({
           loading="lazy"
         />
       ) : (
-        <span>{initials}</span>
+        <span>{fallback}</span>
       )}
     </div>
   );

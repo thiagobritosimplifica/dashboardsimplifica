@@ -1,5 +1,5 @@
 import { Trophy } from "lucide-react";
-import { CloserAvatar } from "./CloserAvatar";
+import { PersonAvatar } from "./PersonAvatar";
 import type { CloserStats } from "@/lib/dashboard-data";
 import { formatBRL } from "@/lib/dashboard-data";
 
@@ -20,7 +20,7 @@ function PodiumItem({
   return (
     <div className={`flex flex-col items-center gap-2 ${config.scale}`}>
       <div className="text-2xl">{config.medal}</div>
-      <CloserAvatar
+      <PersonAvatar
         name={closer.name}
         className={config.size}
         style={{
