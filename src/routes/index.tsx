@@ -35,7 +35,7 @@ function Dashboard() {
   const query = useQuery({
     queryKey: ["dashboard-sheets"],
     queryFn: () => fetchSheets(),
-    refetchInterval: 5 * 60 * 1000,
+    refetchInterval: 60 * 60 * 1000, // 1 hour — matches server cache
     refetchOnWindowFocus: false,
   });
 

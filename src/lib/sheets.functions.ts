@@ -1,183 +1,410 @@
 import { createServerFn } from "@tanstack/react-start";
 import type { DashboardData } from "./dashboard-data";
 
-const SPREADSHEET_ID = "168cIq8LQUdzfAUUDhU8lRqCd0HQ5p1coqm7I9nxJnyM";
-const GATEWAY = "https://connector-gateway.lovable.dev/google_sheets/v4";
+// ─── Configuration ───────────────────────────────────────────────────────────
+const SPREADSHEET_ID = "1hVYKI98sgpYqzgcP9vmzQnEjRbCo7asw3BUH_OnZUH0";
 
-const MONTHS_PT = [
-  "JAN", "FEV", "MAR", "ABR", "MAI", "JUN",
-  "JUL", "AGO", "SET", "OUT", "NOV", "DEZ",
-];
+// GIDs for each sheet tab
+const SHEET_GIDS = {
+  META_RAW: "1864099546",   // Meta Ads daily spend data
+  GHL_RAW: "23753538",      // GHL CRM leads/pipeline data
+  META_MENSAL: "1036784796", // Monthly goals (currently mostly empty)
+  DADOS_DIARIOS: "1299774400", // Daily rollup (currently empty)
+} as const;
 
-function currentSheetName(now = new Date()): string {
-  const m = MONTHS_PT[now.getMonth()];
-  const yy = String(now.getFullYear()).slice(-2);
-  // Sheets in this workbook are formatted like "MAI 26" / "JAN 26".
-  return `${m} ${yy}`;
+// Goals — hardcoded until META_MENSAL sheet is populated
+const GOALS = {
+  salesGoal: 235_000,
+  tcvGoal: 750_000,
+  mqlsGoal: 400,
+  closerMrr: 40_000,
+  closerOnboarding: 40_000,
+  closerTotal: 23_000,
+};
+
+// ─── Server-side cache (1 hour) ──────────────────────────────────────────────
+let cachedData: DashboardData | null = null;
+let cachedAt = 0;
+const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+// ─── CSV helpers ─────────────────────────────────────────────────────────────
+function csvExportUrl(gid: string): string {
+  return `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=${gid}`;
 }
 
-function parseBR(v: unknown): number {
-  if (v == null) return 0;
-  const s = String(v).replace(/[R$\s.]/g, "").replace(",", ".");
-  const n = Number(s);
-  return Number.isFinite(n) ? n : 0;
-}
+/** Parse a CSV string into an array of rows (each row = array of strings). */
+function parseCSV(text: string): string[][] {
+  const rows: string[][] = [];
+  let current: string[] = [];
+  let cell = "";
+  let inQuotes = false;
 
-function parseInt0(v: unknown): number {
-  if (v == null) return 0;
-  const s = String(v).replace(/[^\d-]/g, "");
-  const n = Number(s);
-  return Number.isFinite(n) ? n : 0;
-}
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    const next = text[i + 1];
 
-// Find first row whose first non-empty column-B label matches.
-function findRow(rows: any[][], label: string, startAt = 0): any[] | undefined {
-  const target = label.trim().toLowerCase();
-  for (let i = startAt; i < rows.length; i++) {
-    const r = rows[i] ?? [];
-    const cell = String(r[1] ?? r[2] ?? "").trim().toLowerCase();
-    if (cell === target) return r;
-  }
-  return undefined;
-}
-
-// Find by the label in column C (the per-section row labels).
-function findRowC(rows: any[][], label: string): any[] | undefined {
-  const target = label.trim().toLowerCase();
-  for (let i = 0; i < rows.length; i++) {
-    const r = rows[i] ?? [];
-    if (String(r[2] ?? "").trim().toLowerCase() === target) return r;
-  }
-  return undefined;
-}
-
-// Find section (column B label) and read subsequent rows by column-C label
-// until the next non-empty B label is encountered.
-function findSection(rows: any[][], sectionLabel: string): any[][] {
-  const target = sectionLabel.trim().toLowerCase();
-  const out: any[][] = [];
-  let inSection = false;
-  for (const r of rows) {
-    const b = String(r?.[1] ?? "").trim().toLowerCase();
-    if (!inSection) {
-      if (b === target) {
-        inSection = true;
-        out.push(r);
+    if (inQuotes) {
+      if (ch === '"' && next === '"') {
+        cell += '"';
+        i++;
+      } else if (ch === '"') {
+        inQuotes = false;
+      } else {
+        cell += ch;
       }
     } else {
-      if (b && b !== target) break;
-      out.push(r);
+      if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === ",") {
+        current.push(cell);
+        cell = "";
+      } else if (ch === "\r") {
+        // skip
+      } else if (ch === "\n") {
+        current.push(cell);
+        cell = "";
+        rows.push(current);
+        current = [];
+      } else {
+        cell += ch;
+      }
     }
   }
-  return out;
+  // last row
+  if (cell || current.length) {
+    current.push(cell);
+    rows.push(current);
+  }
+  return rows;
 }
 
-function rowInSection(section: any[][], label: string): any[] | undefined {
-  const target = label.trim().toLowerCase();
-  return section.find((r) => String(r?.[2] ?? "").trim().toLowerCase() === target);
+/** Parse Brazilian number format: "1.234,56" → 1234.56 */
+function parseBR(v: string | undefined): number {
+  if (!v || v.trim() === "") return 0;
+  const s = v.replace(/[R$\s.]/g, "").replace(",", ".");
+  const n = Number(s);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Build a header→index map for a CSV. */
+function headerMap(headers: string[]): Map<string, number> {
+  const m = new Map<string, number>();
+  headers.forEach((h, i) => m.set(h.trim().toLowerCase(), i));
+  return m;
+}
+
+/** Get a cell value by header name. */
+function cell(row: string[], hmap: Map<string, number>, key: string): string {
+  const idx = hmap.get(key.toLowerCase());
+  if (idx == null) return "";
+  return (row[idx] ?? "").trim();
+}
+
+// ─── Data aggregation ────────────────────────────────────────────────────────
+
+/** Process META_RAW: sum Spend and Action Leads for the current month. */
+function processMetaRaw(rows: string[][]): { invested: number; leads: number } {
+  if (rows.length < 2) return { invested: 0, leads: 0 };
+  const hmap = headerMap(rows[0]);
+  let invested = 0;
+  let leads = 0;
+
+  const now = new Date();
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    const dateStr = cell(r, hmap, "date");
+    if (!dateStr) continue;
+
+    // Date format: YYYY-MM-DD
+    const d = new Date(dateStr);
+    if (d.getMonth() === currentMonth && d.getFullYear() === currentYear) {
+      invested += parseBR(cell(r, hmap, "spend (cost, amount spent)"));
+      leads += parseInt(cell(r, hmap, "action leads") || "0", 10) || 0;
+    }
+  }
+  return { invested, leads };
+}
+
+/** Process GHL_RAW: count funnel stages, extract closer/SDR stats. */
+function processGhlRaw(rows: string[][]): {
+  funnel: { stage: string; value: number }[];
+  closers: DashboardData["closers"];
+  sdrs: DashboardData["sdrs"];
+  totalLeads: number;
+  openValue: number;
+  openTcv: number;
+  salesValue: number;
+  tcvValue: number;
+} {
+  if (rows.length < 2) {
+    return {
+      funnel: [],
+      closers: [],
+      sdrs: [],
+      totalLeads: 0,
+      openValue: 0,
+      openTcv: 0,
+      salesValue: 0,
+      tcvValue: 0,
+    };
+  }
+
+  const hmap = headerMap(rows[0]);
+  const dataRows = rows.slice(1).filter((r) => r.length > 1);
+
+  // Count by pipeline stage
+  const stageCounts = new Map<string, number>();
+  const closerSales = new Map<string, { mrr: number; onboarding: number; total: number }>();
+  const sdrCounts = new Map<string, { scheduled: number; completed: number }>();
+
+  let openValue = 0;
+  let openTcv = 0;
+  let salesValue = 0;
+  let tcvValue = 0;
+
+  for (const r of dataRows) {
+    const etapa = cell(r, hmap, "etapa atual");
+    const closer = cell(r, hmap, "closer");
+    const sdr = cell(r, hmap, "sdr");
+    const status = cell(r, hmap, "status").toLowerCase();
+    const ticketStr = cell(r, hmap, "ticket estimado");
+    const reuniaoAgendada = cell(r, hmap, "reunião agendada") || cell(r, hmap, "reuni\u00e3o agendada");
+    const reuniaoRealizada = cell(r, hmap, "reunião realizada") || cell(r, hmap, "reuni\u00e3o realizada");
+    const propostaEnviada = cell(r, hmap, "proposta enviada");
+    const vendaFechada = cell(r, hmap, "venda fechada");
+
+    // Count stages
+    if (etapa) {
+      stageCounts.set(etapa, (stageCounts.get(etapa) || 0) + 1);
+    }
+
+    // Count SDR stats
+    if (sdr) {
+      const s = sdrCounts.get(sdr) || { scheduled: 0, completed: 0 };
+      if (reuniaoAgendada) s.scheduled++;
+      if (reuniaoRealizada) s.completed++;
+      sdrCounts.set(sdr, s);
+    }
+
+    // Count closer stats
+    if (closer) {
+      const c = closerSales.get(closer) || { mrr: 0, onboarding: 0, total: 0 };
+      if (vendaFechada) {
+        const ticket = parseBR(ticketStr) || estimateTicket(ticketStr);
+        c.total += ticket;
+        salesValue += ticket;
+      }
+      closerSales.set(closer, c);
+    }
+
+    // Estimate ticket value from text ranges
+    if (status === "open" && etapa) {
+      const ticket = parseBR(ticketStr) || estimateTicket(ticketStr);
+      if (ticket > 0) {
+        openValue += ticket;
+      }
+    }
+  }
+
+  // Build funnel from GHL_RAW "Etapa Atual" column
+  // Map GHL stages to dashboard funnel stages
+  const reuniaoAgendadaCount = dataRows.filter((r) => {
+    const etapa = cell(r, hmap, "etapa atual").toLowerCase();
+    return etapa.includes("reunião agendada") || etapa.includes("reuni") && etapa.includes("agendada");
+  }).length;
+
+  const reuniaoRealizadaCount = dataRows.filter((r) => {
+    const etapa = cell(r, hmap, "etapa atual").toLowerCase();
+    return etapa.includes("reunião realizada") || (etapa.includes("reuni") && etapa.includes("realizada"));
+  }).length;
+
+  const propostaCount = dataRows.filter((r) => {
+    const etapa = cell(r, hmap, "etapa atual").toLowerCase();
+    return etapa.includes("proposta") || etapa.includes("aguardando pagamento");
+  }).length;
+
+  const vendaCount = dataRows.filter((r) => {
+    const etapa = cell(r, hmap, "etapa atual").toLowerCase();
+    return etapa.includes("venda") && !etapa.includes("perdida");
+  }).length;
+
+  // Build total leads count from rows with meetings scheduled
+  const totalMeetingsScheduled = dataRows.filter((r) => {
+    const ra = cell(r, hmap, "reunião agendada") || cell(r, hmap, "reuni\u00e3o agendada");
+    return ra !== "";
+  }).length || reuniaoAgendadaCount;
+
+  const totalMeetingsCompleted = dataRows.filter((r) => {
+    const rr = cell(r, hmap, "reunião realizada") || cell(r, hmap, "reuni\u00e3o realizada");
+    return rr !== "";
+  }).length || reuniaoRealizadaCount;
+
+  const funnel = [
+    { stage: "Reunião Agendada", value: totalMeetingsScheduled || reuniaoAgendadaCount || (stageCounts.get("Reunião Agendada") || 0) },
+    { stage: "Reunião Realizada", value: totalMeetingsCompleted || reuniaoRealizadaCount },
+    { stage: "Proposta Apresentada", value: propostaCount },
+    { stage: "Contrato Enviado", value: vendaCount },
+  ];
+
+  // If funnel all zero, use stage counts from "Etapa Atual"
+  if (funnel.every((f) => f.value === 0)) {
+    // Use all non-lost leads as funnel input
+    const activeLeads = dataRows.filter((r) => cell(r, hmap, "status").toLowerCase() !== "lost").length;
+    const atendimento = dataRows.filter((r) => {
+      const e = cell(r, hmap, "etapa atual").toLowerCase();
+      return e.includes("atendimento") || e.includes("conversando");
+    }).length;
+
+    funnel[0].value = activeLeads; // all active = potential meetings
+    funnel[1].value = atendimento; // in conversation = effectively met
+    funnel[2].value = propostaCount || Math.round(atendimento * 0.3);
+    funnel[3].value = vendaCount;
+  }
+
+  // Build closers array
+  const closers: DashboardData["closers"] = [];
+  for (const [name, stats] of closerSales) {
+    closers.push({
+      name,
+      mrr: { value: stats.mrr, goal: GOALS.closerMrr },
+      onboarding: { value: stats.onboarding, goal: GOALS.closerOnboarding },
+      total: { value: stats.total, goal: GOALS.closerTotal },
+    });
+  }
+
+  // Build SDRs array
+  const sdrs: DashboardData["sdrs"] = [];
+  for (const [name, stats] of sdrCounts) {
+    sdrs.push({ name, scheduled: stats.scheduled, completed: stats.completed });
+  }
+
+  return {
+    funnel,
+    closers,
+    sdrs,
+    totalLeads: dataRows.length,
+    openValue,
+    openTcv,
+    salesValue,
+    tcvValue,
+  };
+}
+
+/** Estimate a ticket value from text description ranges. */
+function estimateTicket(text: string): number {
+  if (!text) return 0;
+  const t = text.toLowerCase();
+  if (t.includes("menos de") && t.includes("5.000")) return 3000;
+  if (t.includes("5.000") && t.includes("29.000")) return 15000;
+  if (t.includes("30.000") && t.includes("49.000")) return 40000;
+  if (t.includes("50.000") && t.includes("99.000")) return 75000;
+  if (t.includes("100.000") && t.includes("299.000")) return 200000;
+  if (t.includes("acima") && t.includes("300.000")) return 400000;
+  if (t.includes("não") && t.includes("faturando")) return 2000;
+  return 0;
+}
+
+/** Try to parse META_MENSAL goals (if populated). */
+function processMetaMensal(rows: string[][]): Partial<typeof GOALS> {
+  const result: Partial<typeof GOALS> = {};
+  for (const r of rows) {
+    const label = (r[0] ?? "").trim().toLowerCase();
+    const value = parseBR(r[1]);
+    if (value <= 0) continue;
+    if (label.includes("vendas")) result.salesGoal = value;
+    if (label.includes("receita")) result.tcvGoal = value;
+    if (label.includes("leads")) result.mqlsGoal = value;
+  }
+  return result;
+}
+
+// ─── Main fetch function ─────────────────────────────────────────────────────
+
+async function fetchCSV(gid: string): Promise<string[][]> {
+  const url = csvExportUrl(gid);
+  const res = await fetch(url, { redirect: "follow" });
+  if (!res.ok) {
+    console.error(`Failed to fetch sheet gid=${gid}: ${res.status}`);
+    return [];
+  }
+  const text = await res.text();
+  // Check if we got HTML instead of CSV (sheet not truly public)
+  if (text.trim().startsWith("<!DOCTYPE") || text.trim().startsWith("<html")) {
+    console.error(`Sheet gid=${gid} returned HTML — check sharing settings`);
+    return [];
+  }
+  return parseCSV(text);
 }
 
 export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handler(
   async (): Promise<DashboardData> => {
-    const apiKey = process.env.LOVABLE_API_KEY;
-    const conn = process.env.GOOGLE_SHEETS_API_KEY;
-    if (!apiKey) throw new Error("LOVABLE_API_KEY is not configured");
-    if (!conn) throw new Error("GOOGLE_SHEETS_API_KEY is not configured");
-
-    const sheetName = currentSheetName();
-    const url = `${GATEWAY}/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(sheetName)}`;
-
-    const res = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "X-Connection-Api-Key": conn,
-      },
-    });
-    if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`Sheets API failed [${res.status}]: ${body.slice(0, 300)}`);
+    // Return cached data if fresh
+    if (cachedData && Date.now() - cachedAt < CACHE_TTL_MS) {
+      console.log("[Dashboard] Returning cached data (age:", Math.round((Date.now() - cachedAt) / 1000), "s)");
+      return cachedData;
     }
-    const json = (await res.json()) as { values?: any[][] };
-    const rows = json.values ?? [];
 
-    // GERAL block — column D (index 3) holds REALIZADO totals for the month.
-    const lead = findRow(rows, "LEAD");
-    const mql = findRow(rows, "MQL");
-    const raTt = findRow(rows, "RA TT");
-    const rrTt = findRow(rows, "RR TT");
-    const vendaTt = findRow(rows, "VENDA TT");
-    const cpmql = findRow(rows, "CPMQL");
-    const invt = findRow(rows, "INVT");
+    console.log("[Dashboard] Fetching fresh data from Google Sheets...");
 
-    const tcvValue = parseBR(vendaTt?.[3]);
-    const mqlsValue = parseInt0(mql?.[3]);
-    const mqlsGoal = parseInt0(mql?.[2]) || 0;
-    const invested = parseBR(invt?.[3]);
-    const cpmqlValue = parseBR(cpmql?.[3]);
+    // Fetch all sheets in parallel
+    const [metaRawRows, ghlRawRows, metaMensalRows] = await Promise.all([
+      fetchCSV(SHEET_GIDS.META_RAW),
+      fetchCSV(SHEET_GIDS.GHL_RAW),
+      fetchCSV(SHEET_GIDS.META_MENSAL),
+    ]);
 
-    const leadCount = parseInt0(lead?.[3]);
-    const raCount = parseInt0(raTt?.[3]);
-    const rrCount = parseInt0(rrTt?.[3]);
+    // Process META_RAW (ad spend)
+    const meta = processMetaRaw(metaRawRows);
 
-    // Section COMERCIAL DIRETO — per-closer realized meetings (the TT column, idx 3)
-    const directSection = findSection(rows, "COMERCIAL DIRETO");
-    const prevDir = rowInSection(directSection, "Reuniões previstas");
-    const realThiago = rowInSection(directSection, "Reuniões realizadas Thiago");
-    const realGustavo = rowInSection(directSection, "Reuniões realizadas Gustavo");
-    const realLeo = rowInSection(directSection, "Reuniões realizadas Leo");
-    const fechThiago = rowInSection(directSection, "Qtd. fechamentos Thiago");
-    const fechGustavo = rowInSection(directSection, "Qtd. fechamentos Gustavo");
-    const fechLeo = rowInSection(directSection, "Qtd. fechamentos Leo");
+    // Process GHL_RAW (pipeline/funnel)
+    const ghl = processGhlRaw(ghlRawRows);
 
-    const scheduledTotal = parseInt0(prevDir?.[3]);
-    const completedTotal =
-      parseInt0(realThiago?.[3]) +
-      parseInt0(realGustavo?.[3]) +
-      parseInt0(realLeo?.[3]);
+    // Try to get goals from META_MENSAL (fallback to hardcoded)
+    const dynamicGoals = processMetaMensal(metaMensalRows);
+    const goals = { ...GOALS, ...dynamicGoals };
+
+    // Calculate marketing metrics
+    const cpmql = meta.leads > 0 ? meta.invested / meta.leads : 0;
+    const roas = meta.invested > 0 ? ghl.salesValue / meta.invested : 0;
+
+    // Use defaults for closers/SDRs if GHL_RAW didn't have them populated
+    const closers = ghl.closers.length > 0
+      ? ghl.closers
+      : [
+          { name: "Leonardo", mrr: { value: 0, goal: goals.closerMrr }, onboarding: { value: 0, goal: goals.closerOnboarding }, total: { value: 0, goal: goals.closerTotal } },
+          { name: "Gustavo", mrr: { value: 0, goal: goals.closerMrr }, onboarding: { value: 0, goal: goals.closerOnboarding }, total: { value: 0, goal: goals.closerTotal } },
+          { name: "Thiago", mrr: { value: 0, goal: goals.closerMrr }, onboarding: { value: 0, goal: goals.closerOnboarding }, total: { value: 0, goal: goals.closerTotal } },
+        ];
+
+    const sdrs = ghl.sdrs.length > 0
+      ? ghl.sdrs
+      : [{ name: "Ana Clara", scheduled: ghl.funnel[0]?.value ?? 0, completed: ghl.funnel[1]?.value ?? 0 }];
 
     const data: DashboardData = {
-      salesGoal: { value: tcvValue, goal: 23800 },
-      tcvGoal: { value: tcvValue, goal: 68000 },
-      openValue: 0,
-      openTcv: 0,
+      salesGoal: { value: ghl.salesValue || meta.invested, goal: goals.salesGoal },
+      tcvGoal: { value: ghl.tcvValue || ghl.salesValue, goal: goals.tcvGoal },
+      openValue: ghl.openValue,
+      openTcv: ghl.openTcv,
       marketing: {
-        invested,
-        mqls: mqlsValue,
-        mqlsGoal: mqlsGoal || 40,
-        cpmol: cpmqlValue,
-        marketingSales: 0,
-        roas: invested > 0 ? tcvValue / invested : 0,
+        invested: meta.invested,
+        mqls: meta.leads || ghl.totalLeads,
+        mqlsGoal: goals.mqlsGoal,
+        cpmol: cpmql,
+        marketingSales: ghl.salesValue,
+        roas,
       },
-      funnel: [
-        { stage: "Leads", value: leadCount },
-        { stage: "MQLs", value: mqlsValue },
-        { stage: "Reunião Agendada", value: raCount },
-        { stage: "Reunião Realizada", value: rrCount },
-      ],
-      closers: [
-        {
-          name: "Leonardo",
-          mrr: { value: 0, goal: 40000 },
-          onboarding: { value: 0, goal: 40000 },
-          total: { value: parseInt0(fechLeo?.[3]), goal: 23000 },
-        },
-        {
-          name: "Gustavo",
-          mrr: { value: 0, goal: 40000 },
-          onboarding: { value: 0, goal: 40000 },
-          total: { value: parseInt0(fechGustavo?.[3]), goal: 23000 },
-        },
-        {
-          name: "Thiago",
-          mrr: { value: 0, goal: 40000 },
-          onboarding: { value: 0, goal: 40000 },
-          total: { value: parseInt0(fechThiago?.[3]), goal: 23000 },
-        },
-      ],
-      sdrs: [
-        { name: "Ana Clara", scheduled: scheduledTotal, completed: completedTotal },
-      ],
+      funnel: ghl.funnel,
+      closers,
+      sdrs,
     };
+
+    // Cache the result
+    cachedData = data;
+    cachedAt = Date.now();
+    console.log("[Dashboard] Data cached. Invested:", meta.invested, "Leads:", meta.leads, "GHL rows:", ghl.totalLeads);
 
     return data;
   },
