@@ -1,4 +1,4 @@
-import { DollarSign, Users, Target, TrendingUp, Activity } from "lucide-react";
+import { DollarSign, Users, Target, Activity } from "lucide-react";
 import type { DashboardData } from "@/lib/dashboard-data";
 import { formatCompact, formatBRL } from "@/lib/dashboard-data";
 
@@ -21,8 +21,8 @@ function KpiCard({ icon, label, value, sub }: { icon: React.ReactNode; label: st
 export function MarketingStrip({ m }: { m: DashboardData["marketing"] }) {
   const mqlPct = Math.min(100, (m.mqls / m.mqlsGoal) * 100);
   return (
-    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-      <KpiCard icon={<DollarSign size={18} />} label="Investido" value={formatCompact(m.invested)} />
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <KpiCard icon={<DollarSign size={18} />} label="Investido (mês)" value={formatCompact(m.invested)} />
       <KpiCard
         icon={<Users size={18} />}
         label="MQLs"
@@ -34,7 +34,6 @@ export function MarketingStrip({ m }: { m: DashboardData["marketing"] }) {
         }
       />
       <KpiCard icon={<Target size={18} />} label="CPMqL" value={formatBRL(m.cpmol)} />
-      <KpiCard icon={<TrendingUp size={18} />} label="Vendas Marketing" value={formatCompact(m.marketingSales)} />
       <KpiCard icon={<Activity size={18} />} label="ROAS" value={`${m.roas.toFixed(1)}x`} />
     </div>
   );

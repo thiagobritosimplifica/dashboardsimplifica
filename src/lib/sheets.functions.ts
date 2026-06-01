@@ -90,14 +90,34 @@ function isNonEmpty(v: string): boolean {
   return v !== "" && v !== "0";
 }
 
+// Normalize an ad/campaign name for matching across sheets.
+function normalizeAdName(v: string): string {
+  return v.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+// Current month as "YYYY-MM" (server timezone).
+function currentMonthPrefix(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
 // ─── META_RAW processing ─────────────────────────────────────────────────────
-// One row per ad per day: Date, Campaign Name, ..., Action Leads, ..., Spend, ...
+// One row per ad per day: Date, Campaign Name, Adset Name, Ad Name, ...,
+//   Action Leads, ..., Spend, ...
 // Note: the export sometimes includes a duplicate header row — skip it.
-function processMetaRaw(rows: string[][]): { invested: number; leads: number } {
-  if (rows.length < 2) return { invested: 0, leads: 0 };
+// Totals are restricted to the CURRENT MONTH so KPIs are monthly figures.
+function processMetaRaw(rows: string[][]): {
+  invested: number;
+  leads: number;
+  adSpend: Map<string, number>; // normalized ad name -> spend (current month)
+} {
+  const empty = { invested: 0, leads: 0, adSpend: new Map<string, number>() };
+  if (rows.length < 2) return empty;
   const hmap = headerMap(rows[0]);
+  const monthPrefix = currentMonthPrefix();
   let invested = 0;
   let leads = 0;
+  const adSpend = new Map<string, number>();
 
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
@@ -105,11 +125,21 @@ function processMetaRaw(rows: string[][]): { invested: number; leads: number } {
     // Skip duplicate header rows emitted by Google Sheets export
     if ((r[0] ?? "").trim().toLowerCase() === "date") continue;
 
-    invested += parseBR(cellVal(r, hmap, "spend (cost, amount spent)"));
-    const leadsStr = cellVal(r, hmap, "action leads");
-    leads += parseFloat(leadsStr.replace(",", ".")) || 0;
+    // Keep only the current month (Date is ISO "YYYY-MM-DD").
+    const date = cellVal(r, hmap, "date");
+    if (date && !date.startsWith(monthPrefix)) continue;
+
+    const spend = parseBR(cellVal(r, hmap, "spend (cost, amount spent)"));
+    invested += spend;
+    leads += parseFloat(cellVal(r, hmap, "action leads").replace(",", ".")) || 0;
+
+    const adName = cellVal(r, hmap, "ad name");
+    if (adName) {
+      const key = normalizeAdName(adName);
+      adSpend.set(key, (adSpend.get(key) ?? 0) + spend);
+    }
   }
-  return { invested, leads };
+  return { invested, leads, adSpend };
 }
 
 // ─── Lead processing (GHL_RAW + DADOS DIARIOS) ───────────────────────────────
@@ -265,17 +295,27 @@ function processLeads(
 }
 
 // ─── VENDAS processing ───────────────────────────────────────────────────────
-// Columns: Cliente, Data Fechamento, Closer, Campanha, Serviço, Plano,
-//          Setup, Mensalidade, Receita Total, Tempo Contrato, LTV, Status
+// Columns: Cliente, Data Fechamento, Closer, Campanha, Conjunto, Anúncio,
+//          Serviço, Plano, Setup, Mensalidade, Receita Total, Tempo Contrato,
+//          LTV, Status
+interface AdSale {
+  ad: string;
+  campaign: string;
+  adset: string;
+  revenue: number;
+  sales: number;
+}
 function processVendas(rows: string[][]): {
   closers: Map<string, { vendas: number; tcv: number }>;
   totalVendas: number;
   totalTcv: number;
+  adSales: Map<string, AdSale>; // normalized ad name -> aggregated sales
 } {
   const result = {
     closers: new Map<string, { vendas: number; tcv: number }>(),
     totalVendas: 0,
     totalTcv: 0,
+    adSales: new Map<string, AdSale>(),
   };
 
   if (rows.length < 2) return result;
@@ -309,6 +349,22 @@ function processVendas(rows: string[][]): {
       c.vendas += vendaValor;
       c.tcv += tcvValor;
       result.closers.set(closer, c);
+    }
+
+    // Attribute the sale revenue to its ad (Anúncio) for the champion-ads ranking.
+    const ad = cellVal(r, hmap, "anúncio") || cellVal(r, hmap, "anuncio");
+    if (ad) {
+      const key = normalizeAdName(ad);
+      const a = result.adSales.get(key) ?? {
+        ad,
+        campaign: cellVal(r, hmap, "campanha"),
+        adset: cellVal(r, hmap, "conjunto"),
+        revenue: 0,
+        sales: 0,
+      };
+      a.revenue += receitaTotal;
+      a.sales += 1;
+      result.adSales.set(key, a);
     }
   }
 
@@ -407,6 +463,31 @@ export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handle
 
     const roas = invested > 0 ? totalVendas / invested : 0;
 
+    // Champion ads: cross-reference VENDAS (revenue per ad) with META_RAW
+    // (spend per ad) and rank by ROAS. Ads whose name isn't found in META_RAW
+    // (no spend data this month) get roas=null and sort after the matched ones.
+    const championAds: DashboardData["championAds"] = [];
+    for (const [key, a] of vendas.adSales) {
+      const spend = meta.adSpend.get(key) ?? 0;
+      championAds.push({
+        ad: a.ad,
+        campaign: a.campaign,
+        adset: a.adset,
+        revenue: a.revenue,
+        spend,
+        roas: spend > 0 ? a.revenue / spend : null,
+        sales: a.sales,
+      });
+    }
+    championAds.sort((x, y) => {
+      // ROAS desc; ads without spend data go last (ranked by revenue among themselves)
+      if (x.roas != null && y.roas != null) return y.roas - x.roas;
+      if (x.roas != null) return -1;
+      if (y.roas != null) return 1;
+      return y.revenue - x.revenue;
+    });
+    console.log("[Dashboard] championAds:", championAds.length, championAds.map((a) => `${a.ad}=${a.roas ?? "?"}x`).join(", "));
+
     // SDRs from lead sheets
     const sdrs: DashboardData["sdrs"] = [];
     if (leads.sdrMap.size > 0) {
@@ -439,6 +520,7 @@ export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handle
       ],
       closers,
       sdrs,
+      championAds,
     };
 
     cachedData = data;

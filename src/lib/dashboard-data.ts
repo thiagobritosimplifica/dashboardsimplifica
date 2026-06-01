@@ -10,6 +10,16 @@ export type SdrStats = {
   completed: number;
 };
 
+export type ChampionAd = {
+  ad: string;
+  campaign: string;
+  adset: string;
+  revenue: number;
+  spend: number;
+  roas: number | null; // null when no matching spend in META_RAW
+  sales: number;
+};
+
 export type DashboardData = {
   salesGoal: { value: number; goal: number };
   tcvGoal: { value: number; goal: number };
@@ -26,6 +36,7 @@ export type DashboardData = {
   funnel: { stage: string; value: number }[];
   closers: CloserStats[];
   sdrs: SdrStats[];
+  championAds: ChampionAd[];
 };
 
 export const MOCK: DashboardData = {
@@ -53,6 +64,10 @@ export const MOCK: DashboardData = {
     { name: "Thiago", vendas: { value: 9420, goal: 23000 }, tcv: { value: 14120, goal: 50000 } },
   ],
   sdrs: [{ name: "Ana Clara", scheduled: 253, completed: 193 }],
+  championAds: [
+    { ad: "AD01 IMG", campaign: "[CADASTRO] TRAFEGO DIRETO", adset: "01 IMG - ADV+", revenue: 9000, spend: 1850, roas: 4.86, sales: 1 },
+    { ad: "AD07 TH", campaign: "[CRM] VIDEO ADV+", adset: "07 VIDEO", revenue: 7500, spend: 2100, roas: 3.57, sales: 1 },
+  ],
 };
 
 export const formatBRL = (n: number) =>

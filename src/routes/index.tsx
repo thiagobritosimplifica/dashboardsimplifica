@@ -15,6 +15,7 @@ import { SalesFunnel } from "@/components/dashboard/SalesFunnel";
 import { SdrMeetings } from "@/components/dashboard/SdrMeetings";
 import { CloserRanking } from "@/components/dashboard/CloserRanking";
 import { SdrRanking } from "@/components/dashboard/SdrRanking";
+import { AdRanking } from "@/components/dashboard/AdRanking";
 import { FileUpload } from "@/components/dashboard/FileUpload";
 import { GoalsPanel, loadGoals, type GoalsConfig } from "@/components/dashboard/GoalsPanel";
 import { Toaster } from "@/components/ui/sonner";
@@ -161,6 +162,11 @@ function Dashboard() {
         </section>
         <section className="col-span-12 lg:col-span-5">
           <SdrMeetings sdrs={data.sdrs} />
+        </section>
+
+        {/* SECTION 8: Champion ads ranking (by ROAS) */}
+        <section className="col-span-12">
+          <AdRanking ads={data.championAds} />
         </section>
       </main>
 
