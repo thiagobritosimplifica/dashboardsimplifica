@@ -10,7 +10,9 @@ RUN bun run build
 
 FROM nginx:alpine
 
-COPY --from=build /app/dist /usr/share/nginx/html
+RUN rm -rf /usr/share/nginx/html/*
+
+COPY --from=build /app/dist/ /usr/share/nginx/html/
 
 EXPOSE 80
 
