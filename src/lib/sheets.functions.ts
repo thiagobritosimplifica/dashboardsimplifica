@@ -613,6 +613,16 @@ export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handle
     // stage. Falls back to closed sales only if the CRM funnel is unavailable.
     const openValue = ghlFunnel?.negociacaoValue ?? totalVendas;
 
+    // Funnel: prefer the live CRM (GHL) data; fall back to the sheets.
+    const funnelStages = ghlFunnel?.stages ?? [
+      { stage: "Reunião Agendada", value: leads.funnel.agendadas },
+      { stage: "Reunião Realizada", value: leads.funnel.realizadas },
+      { stage: "Proposta Apresentada", value: leads.funnel.propostas },
+      { stage: "Contrato Enviado", value: leads.funnel.vendas },
+    ];
+    const reunioesAgendadas = funnelStages[0]?.value ?? 0;
+    const reunioesRealizadas = funnelStages[1]?.value ?? 0;
+
     const data: DashboardData = {
       salesGoal: { value: totalVendas, goal: goals.salesGoal },
       tcvGoal: { value: totalTcv, goal: goals.tcvGoal },
@@ -625,14 +635,10 @@ export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handle
         cpmol: cpmql,
         marketingSales: totalVendas,
         roas,
+        reunioesAgendadas,
+        reunioesRealizadas,
       },
-      // Funnel: prefer the live CRM (GHL) data; fall back to the sheets.
-      funnel: ghlFunnel?.stages ?? [
-        { stage: "Reunião Agendada", value: leads.funnel.agendadas },
-        { stage: "Reunião Realizada", value: leads.funnel.realizadas },
-        { stage: "Proposta Apresentada", value: leads.funnel.propostas },
-        { stage: "Contrato Enviado", value: leads.funnel.vendas },
-      ],
+      funnel: funnelStages,
       closers,
       sdrs,
       championAds,

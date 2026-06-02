@@ -1,4 +1,4 @@
-import { DollarSign, Users, Target, Activity } from "lucide-react";
+import { DollarSign, CalendarCheck, CalendarClock, Activity } from "lucide-react";
 import type { DashboardData } from "@/lib/dashboard-data";
 import { formatCompact, formatBRL } from "@/lib/dashboard-data";
 
@@ -19,21 +19,28 @@ function KpiCard({ icon, label, value, sub }: { icon: React.ReactNode; label: st
 }
 
 export function MarketingStrip({ m }: { m: DashboardData["marketing"] }) {
-  const mqlPct = Math.min(100, (m.mqls / m.mqlsGoal) * 100);
+  const custoAgendada = m.reunioesAgendadas > 0 ? m.invested / m.reunioesAgendadas : 0;
+  const custoRealizada = m.reunioesRealizadas > 0 ? m.invested / m.reunioesRealizadas : 0;
+  const costSub = (label: string, value: number) => (
+    <div className="text-[11px] text-muted-foreground mt-0.5">
+      {label} <span className="text-cyan tabular-nums">{value > 0 ? formatBRL(value) : "—"}</span>
+    </div>
+  );
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
       <KpiCard icon={<DollarSign size={18} />} label="Investido (mês)" value={formatCompact(m.invested)} />
       <KpiCard
-        icon={<Users size={18} />}
-        label="MQLs"
-        value={String(m.mqls)}
-        sub={
-          <div className="mt-1 h-1.5 rounded-full bg-secondary/60 overflow-hidden">
-            <div className="h-full rounded-full" style={{ width: `${mqlPct}%`, background: "var(--gradient-blue)" }} />
-          </div>
-        }
+        icon={<CalendarCheck size={18} />}
+        label="Reunião Agendada"
+        value={String(m.reunioesAgendadas)}
+        sub={costSub("Custo:", custoAgendada)}
       />
-      <KpiCard icon={<Target size={18} />} label="CPMqL" value={formatBRL(m.cpmol)} />
+      <KpiCard
+        icon={<CalendarClock size={18} />}
+        label="Reunião Realizada"
+        value={String(m.reunioesRealizadas)}
+        sub={costSub("Custo:", custoRealizada)}
+      />
       <KpiCard icon={<Activity size={18} />} label="ROAS" value={`${m.roas.toFixed(1)}x`} />
     </div>
   );

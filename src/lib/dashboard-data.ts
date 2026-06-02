@@ -83,6 +83,8 @@ export type DashboardData = {
     cpmol: number;
     marketingSales: number;
     roas: number;
+    reunioesAgendadas: number; // this month (GHL funnel)
+    reunioesRealizadas: number;
   };
   funnel: { stage: string; value: number }[];
   closers: CloserStats[];
@@ -103,6 +105,8 @@ export const MOCK: DashboardData = {
     cpmol: 340,
     marketingSales: 108000,
     roas: 1.1,
+    reunioesAgendadas: 253,
+    reunioesRealizadas: 193,
   },
   funnel: [
     { stage: "Reunião Agendada", value: 253 },
