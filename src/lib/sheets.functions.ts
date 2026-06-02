@@ -609,6 +609,15 @@ export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handle
     }
     console.log("[Dashboard] sdrMeetings:", [...sdrMeetings.entries()].map(([n, s]) => `${n}: ${s.agendadas}ag/${s.realizadas}re`).join(", ") || "(nenhuma este mês)");
 
+    // Reunião Agendada / Realizada (marketing strip) = current-month totals from
+    // DADOS DIARIOS, summed across SDRs. Pulled automatically from the sheet.
+    let reunioesAgendadas = 0;
+    let reunioesRealizadas = 0;
+    for (const s of sdrMeetings.values()) {
+      reunioesAgendadas += s.agendadas;
+      reunioesRealizadas += s.realizadas;
+    }
+
     // "Valor em Aberto" = total value of opps currently in the GHL "Negociação"
     // stage. Falls back to closed sales only if the CRM funnel is unavailable.
     const openValue = ghlFunnel?.negociacaoValue ?? totalVendas;
@@ -620,8 +629,6 @@ export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handle
       { stage: "Proposta Apresentada", value: leads.funnel.propostas },
       { stage: "Contrato Enviado", value: leads.funnel.vendas },
     ];
-    const reunioesAgendadas = funnelStages[0]?.value ?? 0;
-    const reunioesRealizadas = funnelStages[1]?.value ?? 0;
 
     const data: DashboardData = {
       salesGoal: { value: totalVendas, goal: goals.salesGoal },
@@ -647,7 +654,7 @@ export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handle
 
     cachedData = data;
     cachedAt = Date.now();
-    console.log("[Dashboard] Done. Goals:", goals.salesGoal, goals.tcvGoal, goals.mqlsGoal, "| MQLs:", mqls);
+    console.log("[Dashboard] Done. Reuniões (DADOS DIARIOS mês):", reunioesAgendadas, "ag /", reunioesRealizadas, "re | Goals:", goals.salesGoal, goals.tcvGoal);
 
     return data;
   },
