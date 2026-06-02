@@ -295,6 +295,52 @@ function processLeads(
   return { funnel, sdrMap, closerMap, totalLeads: allLeads.length };
 }
 
+// ─── SDR meetings (DADOS DIARIOS) ────────────────────────────────────────────
+// "Reuniões por SDR" / "Ranking SDR" are driven by DADOS DIARIOS, which logs the
+// daily pipeline movements. We count CURRENT-MONTH rows whose Etapa Atual (col J)
+// is exactly "Reunião Agendada" (-> agendadas) or "Reunião Realizada/R2"
+// (-> realizadas), grouped by the SDR column (col K). Rows with no SDR filled in
+// are attributed to the default SDR.
+const DEFAULT_SDR = "Ana Clara";
+
+// DADOS DIARIOS "Data" is BR format "D/M/YYYY" or "DD/MM/YYYY".
+function isCurrentMonthBR(dateStr: string): boolean {
+  const parts = dateStr.trim().split("/");
+  if (parts.length !== 3) return false;
+  const month = parseInt(parts[1], 10);
+  const year = parseInt(parts[2], 10);
+  const now = new Date();
+  return month === now.getMonth() + 1 && year === now.getFullYear();
+}
+
+function processSdrMeetings(
+  dadosRows: string[][]
+): Map<string, { agendadas: number; realizadas: number }> {
+  const map = new Map<string, { agendadas: number; realizadas: number }>();
+  if (dadosRows.length < 2) return map;
+  const hmap = headerMap(dadosRows[0]);
+
+  for (let i = 1; i < dadosRows.length; i++) {
+    const r = dadosRows[i];
+    if (!r || r.length < 2) continue;
+
+    // Only the current month, by the "Data" (daily movement date) column.
+    if (!isCurrentMonthBR(cellVal(r, hmap, "data"))) continue;
+
+    const etapa = cellVal(r, hmap, "etapa atual").toLowerCase();
+    const agendada = etapa.includes("reuni") && etapa.includes("agendada");
+    const realizada = etapa.includes("realizada"); // "Reunião Realizada/R2"
+    if (!agendada && !realizada) continue;
+
+    const sdr = cellVal(r, hmap, "sdr") || DEFAULT_SDR;
+    const s = map.get(sdr) ?? { agendadas: 0, realizadas: 0 };
+    if (agendada) s.agendadas++;
+    if (realizada) s.realizadas++;
+    map.set(sdr, s);
+  }
+  return map;
+}
+
 // ─── VENDAS processing ───────────────────────────────────────────────────────
 // Columns: Cliente, Data Fechamento, Closer, Campanha, Conjunto, Anúncio,
 //          Serviço, Plano, Setup, Mensalidade, Receita Total, Tempo Contrato,
@@ -477,15 +523,18 @@ export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handle
     });
     console.log("[Dashboard] championAds:", championAds.length, championAds.map((a) => `${a.ad}=${a.roas ?? "?"}x`).join(", "));
 
-    // SDRs from lead sheets
+    // SDR meetings from DADOS DIARIOS (current month, Etapa Atual = Reunião
+    // Agendada / Reunião Realizada/R2), grouped by SDR.
+    const sdrMeetings = processSdrMeetings(dadosDiariosRows);
     const sdrs: DashboardData["sdrs"] = [];
-    if (leads.sdrMap.size > 0) {
-      for (const [name, stats] of leads.sdrMap) {
+    if (sdrMeetings.size > 0) {
+      for (const [name, stats] of sdrMeetings) {
         sdrs.push({ name, scheduled: stats.agendadas, completed: stats.realizadas });
       }
     } else {
-      sdrs.push({ name: "Ana Clara", scheduled: 0, completed: 0 });
+      sdrs.push({ name: DEFAULT_SDR, scheduled: 0, completed: 0 });
     }
+    console.log("[Dashboard] sdrMeetings:", [...sdrMeetings.entries()].map(([n, s]) => `${n}: ${s.agendadas}ag/${s.realizadas}re`).join(", ") || "(nenhuma este mês)");
 
     const data: DashboardData = {
       salesGoal: { value: totalVendas, goal: 235000 },
