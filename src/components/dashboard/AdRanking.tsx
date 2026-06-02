@@ -27,6 +27,7 @@ export function AdRanking({ ads }: { ads: ChampionAd[] }) {
               <tr className="text-[10px] uppercase tracking-widest text-muted-foreground border-b border-border">
                 <th className="text-left font-medium py-2 pr-2">#</th>
                 <th className="text-left font-medium py-2 pr-3">Anúncio</th>
+                <th className="text-left font-medium py-2 pr-3">Conjunto</th>
                 <th className="text-right font-medium py-2 px-2">Vendas</th>
                 <th className="text-right font-medium py-2 px-2">Receita</th>
                 <th className="text-right font-medium py-2 px-2">Gasto</th>
@@ -46,6 +47,11 @@ export function AdRanking({ ads }: { ads: ChampionAd[] }) {
                         {a.campaign}
                       </div>
                     )}
+                  </td>
+                  <td className="py-3 pr-3 min-w-0">
+                    <div className="truncate max-w-[160px] text-foreground/80" title={a.adset}>
+                      {a.adset || "—"}
+                    </div>
                   </td>
                   <td className="py-3 px-2 text-right tabular-nums">{a.sales}</td>
                   <td className="py-3 px-2 text-right tabular-nums font-semibold">{formatCompact(a.revenue)}</td>
