@@ -12,7 +12,6 @@ import { ProgressGoal } from "@/components/dashboard/ProgressGoal";
 import { CloserCard } from "@/components/dashboard/CloserCard";
 import { MarketingStrip } from "@/components/dashboard/MarketingStrip";
 import { SalesFunnel } from "@/components/dashboard/SalesFunnel";
-import { SdrMeetings } from "@/components/dashboard/SdrMeetings";
 import { CloserRanking } from "@/components/dashboard/CloserRanking";
 import { SdrRanking } from "@/components/dashboard/SdrRanking";
 import { AdRanking } from "@/components/dashboard/AdRanking";
@@ -162,16 +161,13 @@ function Dashboard() {
           <MarketingStrip m={data.marketing} />
         </section>
 
-        {/* SECTION 4 + 5: Funnel + SDR meetings */}
-        <section className="col-span-12 lg:col-span-7">
+        {/* SECTION 4: Funnel */}
+        <section className="col-span-12 lg:col-span-5">
           <SalesFunnel stages={data.funnel} />
         </section>
-        <section className="col-span-12 lg:col-span-5">
-          <SdrMeetings sdrs={data.sdrs} />
-        </section>
 
-        {/* SECTION 8: Champion ads ranking (by ROAS) */}
-        <section className="col-span-12">
+        {/* SECTION 5: Champion ads ranking (by ROAS) */}
+        <section className="col-span-12 lg:col-span-7">
           <AdRanking ads={data.championAds} />
         </section>
       </main>
