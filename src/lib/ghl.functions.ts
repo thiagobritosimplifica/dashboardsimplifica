@@ -32,6 +32,15 @@ interface GhlOpportunity {
   pipelineStageId: string;
   status: string; // open | won | lost | abandoned
   monetaryValue: number | null;
+  lastStageChangeAt?: string; // ISO date the opp entered its current stage
+}
+
+// True if an ISO datetime ("2026-06-01T...") falls in the current month.
+function isCurrentMonthISO(dateStr: string | undefined): boolean {
+  if (!dateStr) return false;
+  const d = new Date();
+  const prefix = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  return dateStr.startsWith(prefix);
 }
 
 function ghlHeaders() {
@@ -105,6 +114,10 @@ function buildFunnel(pipelines: GhlPipeline[], opps: GhlOpportunity[]): GhlFunne
     ? opps.filter((o) => o.pipelineId === comercial.id)
     : opps;
 
+  // Funnel reflects THIS MONTH's pipeline movement: opportunities that entered
+  // their current stage during the current month (lastStageChangeAt).
+  const thisMonth = inComercial.filter((o) => isCurrentMonthISO(o.lastStageChangeAt));
+
   let agendada = 0;
   let realizada = 0;
   let negociacao = 0;
@@ -112,7 +125,7 @@ function buildFunnel(pipelines: GhlPipeline[], opps: GhlOpportunity[]): GhlFunne
   let wonValue = 0;
   let wonCount = 0;
 
-  for (const o of inComercial) {
+  for (const o of thisMonth) {
     const stage = stageById.get(o.pipelineStageId);
     const level = milestoneLevel(stage?.name ?? "", o.status);
     if (level >= 1) agendada++;
@@ -132,6 +145,7 @@ function buildFunnel(pipelines: GhlPipeline[], opps: GhlOpportunity[]): GhlFunne
       { stage: "Negociação", value: negociacao },
       { stage: "Venda Ganha", value: ganha },
     ],
+    // Keep the full pipeline count for the MQLs fallback (not month-restricted).
     totalLeads: inComercial.length,
     wonValue,
     wonCount,
