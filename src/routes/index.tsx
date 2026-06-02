@@ -59,7 +59,11 @@ function Dashboard() {
   const query = useQuery({
     queryKey: ["dashboard-sheets"],
     queryFn: () => fetchSheets(),
-    refetchInterval: 5 * 60 * 1000, // 5 minutes
+    // Data is refreshed from the sources (Sheets + GHL) once per hour via the
+    // server-side cache. The browser polls every 10 min only to pick up that
+    // hourly refresh promptly on always-on displays — these polls hit the cache,
+    // not the upstream sources.
+    refetchInterval: 10 * 60 * 1000,
     refetchOnWindowFocus: true,
   });
 

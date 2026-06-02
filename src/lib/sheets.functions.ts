@@ -13,10 +13,12 @@ const SHEET_GIDS = {
   VENDAS: "1093065333",       // Closed deals with Closer + revenue
 } as const;
 
-// ─── Server-side cache (5 minutes) ──────────────────────────────────────────
+// ─── Server-side cache (1 hour) ─────────────────────────────────────────────
+// Sheets data is pulled at most once per hour, aligned with the GHL funnel
+// cache so the whole dashboard refreshes hourly.
 let cachedData: DashboardData | null = null;
 let cachedAt = 0;
-const CACHE_TTL_MS = 5 * 60 * 1000;
+const CACHE_TTL_MS = 60 * 60 * 1000;
 
 // ─── CSV helpers ─────────────────────────────────────────────────────────────
 function csvExportUrl(gid: string): string {
