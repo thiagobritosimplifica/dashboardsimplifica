@@ -467,10 +467,10 @@ export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handle
     console.log("[Dashboard] vendas:", vendas.totalVendas, "TCV:", vendas.totalTcv);
 
     // Invested + MQLs: Meta Ads data is the source of truth for ad spend.
-    // Total leads from the live CRM funnel (GHL) when available, else the sheets.
-    const crmTotalLeads = ghlFunnel?.totalLeads ?? leads.totalLeads;
+    // MQLs = leads created THIS MONTH (from the live CRM), else sheet count.
+    const crmLeadsThisMonth = ghlFunnel?.leadsThisMonth ?? leads.totalLeads;
     const invested = meta.invested;
-    const mqls = meta.leads > 0 ? meta.leads : crmTotalLeads;
+    const mqls = meta.leads > 0 ? meta.leads : crmLeadsThisMonth;
     const cpmql = mqls > 0 ? invested / mqls : 0;
 
     // Sales + TCV: the VENDAS tab is the source of truth for closed revenue.
@@ -536,10 +536,14 @@ export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handle
     }
     console.log("[Dashboard] sdrMeetings:", [...sdrMeetings.entries()].map(([n, s]) => `${n}: ${s.agendadas}ag/${s.realizadas}re`).join(", ") || "(nenhuma este mês)");
 
+    // "Valor em Aberto" = total value of opps currently in the GHL "Negociação"
+    // stage. Falls back to closed sales only if the CRM funnel is unavailable.
+    const openValue = ghlFunnel?.negociacaoValue ?? totalVendas;
+
     const data: DashboardData = {
       salesGoal: { value: totalVendas, goal: 235000 },
       tcvGoal: { value: totalTcv, goal: 750000 },
-      openValue: totalVendas,
+      openValue,
       openTcv: totalTcv,
       marketing: {
         invested,

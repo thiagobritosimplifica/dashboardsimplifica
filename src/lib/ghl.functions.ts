@@ -8,6 +8,8 @@ import { getGhlConfig } from "./config.server";
 export interface GhlFunnel {
   stages: { stage: string; value: number }[];
   totalLeads: number;
+  leadsThisMonth: number; // opportunities created in the current month (MQLs)
+  negociacaoValue: number; // sum of monetaryValue of opps currently in "Negociação"
   wonValue: number;
   wonCount: number;
   fetchedAt: number;
@@ -33,6 +35,7 @@ interface GhlOpportunity {
   status: string; // open | won | lost | abandoned
   monetaryValue: number | null;
   lastStageChangeAt?: string; // ISO date the opp entered its current stage
+  createdAt?: string; // ISO date the opp was created
 }
 
 // True if an ISO datetime ("2026-06-01T...") falls in the current month.
@@ -138,6 +141,17 @@ function buildFunnel(pipelines: GhlPipeline[], opps: GhlOpportunity[]): GhlFunne
     }
   }
 
+  // MQLs = leads created this month.
+  const leadsThisMonth = inComercial.filter((o) => isCurrentMonthISO(o.createdAt)).length;
+
+  // "Valor em Aberto" = total monetaryValue of opps currently in the
+  // "Negociação" stage (a current snapshot, like the GHL pipeline view).
+  let negociacaoValue = 0;
+  for (const o of inComercial) {
+    const stageName = (stageById.get(o.pipelineStageId)?.name ?? "").toLowerCase();
+    if (stageName.includes("negocia")) negociacaoValue += o.monetaryValue ?? 0;
+  }
+
   return {
     stages: [
       { stage: "Reunião Agendada", value: agendada },
@@ -145,8 +159,10 @@ function buildFunnel(pipelines: GhlPipeline[], opps: GhlOpportunity[]): GhlFunne
       { stage: "Negociação", value: negociacao },
       { stage: "Venda Ganha", value: ganha },
     ],
-    // Keep the full pipeline count for the MQLs fallback (not month-restricted).
+    // Keep the full pipeline count for reference (not month-restricted).
     totalLeads: inComercial.length,
+    leadsThisMonth,
+    negociacaoValue,
     wonValue,
     wonCount,
     fetchedAt: Date.now(),
@@ -175,7 +191,8 @@ export async function getGhlFunnel(): Promise<GhlFunnel | null> {
     cachedAt = Date.now();
     console.log(
       "[GHL] Funnel:", funnel.stages.map((s) => `${s.stage}=${s.value}`).join(", "),
-      "| total:", funnel.totalLeads, "| won:", funnel.wonCount, funnel.wonValue
+      "| leadsMês:", funnel.leadsThisMonth, "| Negociação R$:", funnel.negociacaoValue,
+      "| won:", funnel.wonCount, funnel.wonValue
     );
     return funnel;
   } catch (e) {
