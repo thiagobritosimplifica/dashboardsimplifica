@@ -5,9 +5,9 @@ import { useQuery } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import logo from "@/assets/logo-simplifica.png";
-import { MOCK, type DashboardData, formatBRL } from "@/lib/dashboard-data";
+import { MOCK, type DashboardData, type GoalsConfig, formatBRL } from "@/lib/dashboard-data";
 import { parseXlsx } from "@/lib/parse-xlsx";
-import { fetchDashboardFromSheets } from "@/lib/sheets.functions";
+import { fetchDashboardFromSheets, saveGoalsToSheet } from "@/lib/sheets.functions";
 import { ProgressGoal } from "@/components/dashboard/ProgressGoal";
 import { CloserCard } from "@/components/dashboard/CloserCard";
 import { MarketingStrip } from "@/components/dashboard/MarketingStrip";
@@ -16,7 +16,7 @@ import { CloserRanking } from "@/components/dashboard/CloserRanking";
 import { SdrRanking } from "@/components/dashboard/SdrRanking";
 import { AdRanking } from "@/components/dashboard/AdRanking";
 import { FileUpload } from "@/components/dashboard/FileUpload";
-import { GoalsPanel, loadGoals, type GoalsConfig } from "@/components/dashboard/GoalsPanel";
+import { GoalsPanel } from "@/components/dashboard/GoalsPanel";
 import { Toaster } from "@/components/ui/sonner";
 
 export const Route = createFileRoute("/")(
@@ -53,8 +53,8 @@ function applyGoals(data: DashboardData, goals: GoalsConfig): DashboardData {
 
 function Dashboard() {
   const fetchSheets = useServerFn(fetchDashboardFromSheets);
-  const [goals, setGoals] = useState<GoalsConfig>(() => loadGoals());
-  const [data, setData] = useState<DashboardData>(() => applyGoals(MOCK, goals));
+  const saveGoals = useServerFn(saveGoalsToSheet);
+  const [data, setData] = useState<DashboardData>(MOCK);
 
   const query = useQuery({
     queryKey: ["dashboard-sheets"],
@@ -67,9 +67,10 @@ function Dashboard() {
     refetchOnWindowFocus: true,
   });
 
+  // Goals come from the server (METAS_DASH_CONFIG), already applied to the data.
   useEffect(() => {
-    if (query.data) setData(applyGoals(query.data, goals));
-  }, [query.data, goals]);
+    if (query.data) setData(query.data);
+  }, [query.data]);
 
   useEffect(() => {
     if (query.error) {
@@ -81,7 +82,7 @@ function Dashboard() {
   const handleFile = async (file: File) => {
     try {
       const parsed = await parseXlsx(file);
-      setData(applyGoals(parsed, goals));
+      setData(parsed);
       toast.success("Planilha importada com sucesso");
     } catch (e) {
       console.error(e);
@@ -89,10 +90,26 @@ function Dashboard() {
     }
   };
 
-  const handleGoalsSave = useCallback((newGoals: GoalsConfig) => {
-    setGoals(newGoals);
-    toast.success("Metas atualizadas com sucesso!");
-  }, []);
+  const handleGoalsSave = useCallback(
+    async (newGoals: GoalsConfig) => {
+      // Optimistic update so the dashboard reflects the new goals immediately.
+      setData((prev) => applyGoals({ ...prev, goals: newGoals }, newGoals));
+      try {
+        const res = await saveGoals({ data: newGoals });
+        if (res.ok) {
+          toast.success("Metas atualizadas e salvas na planilha!");
+          // Re-sync from the sheet shortly after (allow CSV propagation).
+          setTimeout(() => query.refetch(), 4000);
+        } else {
+          toast.error("Não foi possível salvar as metas na planilha");
+        }
+      } catch (e) {
+        console.error(e);
+        toast.error("Erro ao salvar as metas");
+      }
+    },
+    [saveGoals, query]
+  );
 
   return (
     <div className="min-h-screen w-full p-4 lg:p-6 xl:p-8">
@@ -115,7 +132,7 @@ function Dashboard() {
               {new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" })}
             </div>
           </div>
-          <GoalsPanel onSave={handleGoalsSave} />
+          <GoalsPanel goals={data.goals} onSave={handleGoalsSave} />
           <button
             onClick={() => query.refetch()}
             className="glass rounded-lg p-2 hover:bg-secondary/40 transition-colors"

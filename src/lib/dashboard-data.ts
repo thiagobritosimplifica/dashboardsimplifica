@@ -7,6 +7,40 @@ export type CloserStats = {
 // Canonical closer roster — always shown on the dashboard, even with no sales.
 export const CLOSERS = ["Leonardo", "Gustavo", "Thiago"] as const;
 
+// ─── Goals config (shared between server and client) ─────────────────────────
+// Persisted in the METAS_DASH_CONFIG sheet tab (key/value), so the goals are
+// the same on every device.
+export type CloserGoal = { vendasGoal: number; tcvGoal: number };
+
+export type GoalsConfig = {
+  salesGoal: number;
+  tcvGoal: number;
+  mqlsGoal: number;
+  closerVendasGoal: number; // fallback default for closers without an explicit goal
+  closerTcvGoal: number;
+  closerGoals: Record<string, CloserGoal>;
+};
+
+export const DEFAULT_CLOSER_VENDAS = 23000;
+export const DEFAULT_CLOSER_TCV = 50000;
+
+export const DEFAULT_GOALS: GoalsConfig = {
+  salesGoal: 235000,
+  tcvGoal: 750000,
+  mqlsGoal: 400,
+  closerVendasGoal: DEFAULT_CLOSER_VENDAS,
+  closerTcvGoal: DEFAULT_CLOSER_TCV,
+  closerGoals: Object.fromEntries(
+    CLOSERS.map((name) => [name, { vendasGoal: DEFAULT_CLOSER_VENDAS, tcvGoal: DEFAULT_CLOSER_TCV }])
+  ),
+};
+
+// Sheet key (METAS_DASH_CONFIG "chave" column) <-> per-closer goal mapping.
+// Keys use the closer's lowercased first name, e.g. "leonardo_vendas".
+export function closerGoalKey(name: string, field: "vendas" | "tcv"): string {
+  return `${name.trim().toLowerCase()}_${field}`;
+}
+
 /**
  * Photo filename slug for any person (closer or SDR): full name, lowercased,
  * accent-stripped, spaces removed. e.g. "Ana Clara" -> "anaclara".
@@ -54,6 +88,7 @@ export type DashboardData = {
   closers: CloserStats[];
   sdrs: SdrStats[];
   championAds: ChampionAd[];
+  goals: GoalsConfig; // current goals (source of truth = METAS_DASH_CONFIG sheet)
 };
 
 export const MOCK: DashboardData = {
@@ -85,6 +120,7 @@ export const MOCK: DashboardData = {
     { ad: "AD01 IMG", campaign: "[CADASTRO] TRAFEGO DIRETO", adset: "01 IMG - ADV+", revenue: 9000, spend: 1850, roas: 4.86, sales: 1 },
     { ad: "AD07 TH", campaign: "[CRM] VIDEO ADV+", adset: "07 VIDEO", revenue: 7500, spend: 2100, roas: 3.57, sales: 1 },
   ],
+  goals: DEFAULT_GOALS,
 };
 
 export const formatBRL = (n: number) =>

@@ -42,9 +42,8 @@ export async function parseXlsx(file: File): Promise<DashboardData> {
     if (r.length) {
       data.closers = r.slice(0, 3).map((row) => ({
         name: String(row.name ?? row.Nome ?? "—"),
-        mrr: { value: Number(row.mrr ?? 0), goal: Number(row.mrr_goal ?? 40000) },
-        onboarding: { value: Number(row.onboarding ?? 0), goal: Number(row.onboarding_goal ?? 40000) },
-        total: { value: Number(row.total ?? 0), goal: Number(row.total_goal ?? 23000) },
+        vendas: { value: Number(row.vendas ?? row.Vendas ?? 0), goal: Number(row.vendas_goal ?? 23000) },
+        tcv: { value: Number(row.tcv ?? row.TCV ?? 0), goal: Number(row.tcv_goal ?? 50000) },
       }));
     }
   }

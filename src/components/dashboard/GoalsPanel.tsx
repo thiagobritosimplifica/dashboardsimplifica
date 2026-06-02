@@ -1,56 +1,8 @@
 import { Settings } from "lucide-react";
 import { useState, useEffect } from "react";
-import { CLOSERS } from "@/lib/dashboard-data";
+import { CLOSERS, DEFAULT_GOALS, type GoalsConfig, type CloserGoal } from "@/lib/dashboard-data";
 
-export type CloserGoal = { vendasGoal: number; tcvGoal: number };
-
-export type GoalsConfig = {
-  salesGoal: number;
-  tcvGoal: number;
-  mqlsGoal: number;
-  // Fallback defaults for closers without an explicit per-closer goal.
-  closerVendasGoal: number;
-  closerTcvGoal: number;
-  // Per-closer goals, keyed by closer name.
-  closerGoals: Record<string, CloserGoal>;
-};
-
-const DEFAULT_CLOSER_VENDAS = 23000;
-const DEFAULT_CLOSER_TCV = 50000;
-
-const DEFAULT_GOALS: GoalsConfig = {
-  salesGoal: 235000,
-  tcvGoal: 750000,
-  mqlsGoal: 400,
-  closerVendasGoal: DEFAULT_CLOSER_VENDAS,
-  closerTcvGoal: DEFAULT_CLOSER_TCV,
-  closerGoals: Object.fromEntries(
-    CLOSERS.map((name) => [name, { vendasGoal: DEFAULT_CLOSER_VENDAS, tcvGoal: DEFAULT_CLOSER_TCV }])
-  ),
-};
-
-const STORAGE_KEY = "simplifica-goals";
-
-export function loadGoals(): GoalsConfig {
-  if (typeof window === "undefined") return DEFAULT_GOALS;
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_GOALS;
-    const parsed = JSON.parse(raw) as Partial<GoalsConfig>;
-    return {
-      ...DEFAULT_GOALS,
-      ...parsed,
-      // Deep-merge closer goals so the canonical roster always has entries.
-      closerGoals: { ...DEFAULT_GOALS.closerGoals, ...(parsed.closerGoals ?? {}) },
-    };
-  } catch {
-    return DEFAULT_GOALS;
-  }
-}
-
-function saveGoals(goals: GoalsConfig) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(goals));
-}
+export type { GoalsConfig, CloserGoal };
 
 function formatInputBRL(value: number): string {
   return value.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
@@ -61,16 +13,23 @@ function parseInputBRL(value: string): number {
   return parseInt(cleaned, 10) || 0;
 }
 
-export function GoalsPanel({ onSave }: { onSave: (goals: GoalsConfig) => void }) {
+export function GoalsPanel({
+  goals: serverGoals,
+  onSave,
+}: {
+  goals: GoalsConfig;
+  onSave: (goals: GoalsConfig) => void;
+}) {
   const [open, setOpen] = useState(false);
-  const [goals, setGoals] = useState<GoalsConfig>(DEFAULT_GOALS);
+  const [goals, setGoals] = useState<GoalsConfig>(serverGoals ?? DEFAULT_GOALS);
 
+  // Sync the form with the latest goals coming from the server, but only while
+  // the panel is closed (don't clobber what the user is editing).
   useEffect(() => {
-    setGoals(loadGoals());
-  }, []);
+    if (!open && serverGoals) setGoals(serverGoals);
+  }, [serverGoals, open]);
 
   const handleSave = () => {
-    saveGoals(goals);
     onSave(goals);
     setOpen(false);
   };

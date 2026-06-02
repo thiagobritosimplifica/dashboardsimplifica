@@ -35,3 +35,15 @@ export function getGhlConfig() {
     baseUrl: "https://services.leadconnectorhq.com",
   };
 }
+
+// Goals persistence via the Google Apps Script web app bound to the sheet.
+// The dashboard READS goals from the METAS_DASH_CONFIG tab (public CSV) and
+// WRITES them by POSTing to this web app (which runs as the sheet owner).
+export function getMetasConfig() {
+  return {
+    writeUrl:
+      process.env.METAS_WRITE_URL ||
+      "https://script.google.com/macros/s/AKfycbxXi43DmtB0EgukrStFyFgA0OZs7Euglg9KFeKOO0WnHAY5v97r1vwvdfZkl7z_oMzN/exec",
+    token: process.env.METAS_WRITE_TOKEN || "troque-por-uma-senha-sua",
+  };
+}

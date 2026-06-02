@@ -1,16 +1,19 @@
 import { createServerFn } from "@tanstack/react-start";
-import type { DashboardData } from "./dashboard-data";
-import { CLOSERS } from "./dashboard-data";
+import { z } from "zod";
+import type { DashboardData, GoalsConfig } from "./dashboard-data";
+import { CLOSERS, DEFAULT_GOALS, closerGoalKey } from "./dashboard-data";
 import { getGhlFunnel } from "./ghl.functions";
+import { getMetasConfig } from "./config.server";
 
 // ─── Configuration ───────────────────────────────────────────────────────────
 const SPREADSHEET_ID = "1hVYKI98sgpYqzgcP9vmzQnEjRbCo7asw3BUH_OnZUH0";
 
 const SHEET_GIDS = {
-  META_RAW: "796420346",      // Ad spend per campaign/day (Meta Ads export)
-  GHL_RAW: "1768392785",      // Lead CRM data (GoHighLevel raw)
-  DADOS_DIARIOS: "23753538",  // Lead CRM data (daily entries)
-  VENDAS: "1093065333",       // Closed deals with Closer + revenue
+  META_RAW: "796420346",          // Ad spend per campaign/day (Meta Ads export)
+  GHL_RAW: "1768392785",          // Lead CRM data (GoHighLevel raw)
+  DADOS_DIARIOS: "23753538",      // Lead CRM data (daily entries)
+  VENDAS: "1093065333",           // Closed deals with Closer + revenue
+  METAS_DASH_CONFIG: "1668461733", // Goals (key/value) editable from the dashboard
 } as const;
 
 // ─── Server-side cache (1 hour) ─────────────────────────────────────────────
@@ -420,6 +423,68 @@ function processVendas(rows: string[][]): {
   return result;
 }
 
+// ─── METAS_DASH_CONFIG processing (goals) ────────────────────────────────────
+// Key/value tab ("chave" | "valor"). Missing/empty values fall back to defaults.
+function processGoals(rows: string[][]): GoalsConfig {
+  // Deep-clone defaults so we never mutate the shared object.
+  const goals: GoalsConfig = {
+    ...DEFAULT_GOALS,
+    closerGoals: Object.fromEntries(
+      Object.entries(DEFAULT_GOALS.closerGoals).map(([k, v]) => [k, { ...v }])
+    ),
+  };
+  if (rows.length < 2) return goals;
+  const hmap = headerMap(rows[0]);
+
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || r.length < 1) continue;
+    const key = (cellVal(r, hmap, "chave") || r[0] || "").trim().toLowerCase();
+    const valStr = cellVal(r, hmap, "valor") || r[1] || "";
+    if (!key || valStr.trim() === "") continue;
+    const val = parseBR(valStr);
+    if (!Number.isFinite(val)) continue;
+
+    if (key === "meta_vendas") goals.salesGoal = val;
+    else if (key === "meta_tcv") goals.tcvGoal = val;
+    else if (key === "meta_mqls") goals.mqlsGoal = val;
+    else {
+      const m = key.match(/^(.+)_(vendas|tcv)$/);
+      if (m) {
+        const closerName = CLOSERS.find((c) => c.toLowerCase() === m[1]);
+        if (closerName) {
+          const cg = goals.closerGoals[closerName] ?? {
+            vendasGoal: DEFAULT_GOALS.closerVendasGoal,
+            tcvGoal: DEFAULT_GOALS.closerTcvGoal,
+          };
+          if (m[2] === "vendas") cg.vendasGoal = val;
+          else cg.tcvGoal = val;
+          goals.closerGoals[closerName] = cg;
+        }
+      }
+    }
+  }
+  return goals;
+}
+
+// Flatten a GoalsConfig into the sheet's key/value map for writing.
+function goalsToSheetMap(goals: GoalsConfig): Record<string, number> {
+  const map: Record<string, number> = {
+    meta_vendas: goals.salesGoal,
+    meta_tcv: goals.tcvGoal,
+    meta_mqls: goals.mqlsGoal,
+  };
+  for (const name of CLOSERS) {
+    const cg = goals.closerGoals[name] ?? {
+      vendasGoal: goals.closerVendasGoal,
+      tcvGoal: goals.closerTcvGoal,
+    };
+    map[closerGoalKey(name, "vendas")] = cg.vendasGoal;
+    map[closerGoalKey(name, "tcv")] = cg.tcvGoal;
+  }
+  return map;
+}
+
 // ─── Fetch CSV ───────────────────────────────────────────────────────────────
 async function fetchCSV(gid: string): Promise<string[][]> {
   const url = csvExportUrl(gid);
@@ -451,18 +516,20 @@ export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handle
 
     console.log("[Dashboard] Fetching fresh data from Google Sheets...");
 
-    const [metaRawRows, ghlRawRows, dadosDiariosRows, vendasRows, ghlFunnel] =
+    const [metaRawRows, ghlRawRows, dadosDiariosRows, vendasRows, metasRows, ghlFunnel] =
       await Promise.all([
         fetchCSV(SHEET_GIDS.META_RAW),
         fetchCSV(SHEET_GIDS.GHL_RAW),
         fetchCSV(SHEET_GIDS.DADOS_DIARIOS),
         fetchCSV(SHEET_GIDS.VENDAS),
+        fetchCSV(SHEET_GIDS.METAS_DASH_CONFIG),
         getGhlFunnel(), // live CRM funnel (own 1-hour cache)
       ]);
 
     const meta = processMetaRaw(metaRawRows);
     const leads = processLeads(ghlRawRows, dadosDiariosRows);
     const vendas = processVendas(vendasRows);
+    const goals = processGoals(metasRows);
 
     console.log("[Dashboard] meta:", meta);
     console.log("[Dashboard] leads:", leads.totalLeads, "unique, funnel:", leads.funnel);
@@ -491,10 +558,14 @@ export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handle
     ];
     const closers: DashboardData["closers"] = closerNames.map((name) => {
       const stats = vendas.closers.get(name) ?? { vendas: 0, tcv: 0 };
+      const cg = goals.closerGoals[name] ?? {
+        vendasGoal: goals.closerVendasGoal,
+        tcvGoal: goals.closerTcvGoal,
+      };
       return {
         name,
-        vendas: { value: stats.vendas, goal: 23000 },
-        tcv: { value: stats.tcv, goal: 50000 },
+        vendas: { value: stats.vendas, goal: cg.vendasGoal },
+        tcv: { value: stats.tcv, goal: cg.tcvGoal },
       };
     });
 
@@ -543,14 +614,14 @@ export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handle
     const openValue = ghlFunnel?.negociacaoValue ?? totalVendas;
 
     const data: DashboardData = {
-      salesGoal: { value: totalVendas, goal: 235000 },
-      tcvGoal: { value: totalTcv, goal: 750000 },
+      salesGoal: { value: totalVendas, goal: goals.salesGoal },
+      tcvGoal: { value: totalTcv, goal: goals.tcvGoal },
       openValue,
       openTcv: totalTcv,
       marketing: {
         invested,
         mqls,
-        mqlsGoal: 400,
+        mqlsGoal: goals.mqlsGoal,
         cpmol: cpmql,
         marketingSales: totalVendas,
         roas,
@@ -565,12 +636,49 @@ export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handle
       closers,
       sdrs,
       championAds,
+      goals,
     };
 
     cachedData = data;
     cachedAt = Date.now();
-    console.log("[Dashboard] Done. Invested:", invested, "MQLs:", mqls, "Leads:", leads.totalLeads);
+    console.log("[Dashboard] Done. Goals:", goals.salesGoal, goals.tcvGoal, goals.mqlsGoal, "| MQLs:", mqls);
 
     return data;
   },
 );
+
+// ─── Save goals to the sheet (via the Apps Script web app) ───────────────────
+const closerGoalSchema = z.object({ vendasGoal: z.number(), tcvGoal: z.number() });
+const goalsSchema = z.object({
+  salesGoal: z.number(),
+  tcvGoal: z.number(),
+  mqlsGoal: z.number(),
+  closerVendasGoal: z.number(),
+  closerTcvGoal: z.number(),
+  closerGoals: z.record(z.string(), closerGoalSchema),
+});
+
+export const saveGoalsToSheet = createServerFn({ method: "POST" })
+  .inputValidator(goalsSchema)
+  .handler(async ({ data: goals }): Promise<{ ok: boolean }> => {
+    const cfg = getMetasConfig();
+    try {
+      const res = await fetch(cfg.writeUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: cfg.token, goals: goalsToSheetMap(goals as GoalsConfig) }),
+        redirect: "follow",
+      });
+      const text = await res.text();
+      const ok = text.includes('"ok":true');
+      if (!ok) console.error("[Goals] Save failed, response:", text.slice(0, 200));
+      // Invalidate the dashboard cache so the next fetch returns the new goals.
+      cachedData = null;
+      cachedAt = 0;
+      console.log("[Goals] Saved to sheet:", ok, goalsToSheetMap(goals as GoalsConfig));
+      return { ok };
+    } catch (e) {
+      console.error("[Goals] Save error:", e);
+      return { ok: false };
+    }
+  });
