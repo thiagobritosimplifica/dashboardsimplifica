@@ -6,7 +6,6 @@ import { RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import logo from "@/assets/logo-simplifica.png";
 import { MOCK, type DashboardData, type GoalsConfig, formatBRL } from "@/lib/dashboard-data";
-import { parseXlsx } from "@/lib/parse-xlsx";
 import { fetchDashboardFromSheets, saveGoalsToSheet } from "@/lib/sheets.functions";
 import { ProgressGoal } from "@/components/dashboard/ProgressGoal";
 import { CloserCard } from "@/components/dashboard/CloserCard";
@@ -15,7 +14,6 @@ import { SalesFunnel } from "@/components/dashboard/SalesFunnel";
 import { CloserRanking } from "@/components/dashboard/CloserRanking";
 import { SdrRanking } from "@/components/dashboard/SdrRanking";
 import { AdRanking } from "@/components/dashboard/AdRanking";
-import { FileUpload } from "@/components/dashboard/FileUpload";
 import { GoalsPanel } from "@/components/dashboard/GoalsPanel";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -79,17 +77,6 @@ function Dashboard() {
     }
   }, [query.error]);
 
-  const handleFile = async (file: File) => {
-    try {
-      const parsed = await parseXlsx(file);
-      setData(parsed);
-      toast.success("Planilha importada com sucesso");
-    } catch (e) {
-      console.error(e);
-      toast.error("Não foi possível ler a planilha");
-    }
-  };
-
   const handleGoalsSave = useCallback(
     async (newGoals: GoalsConfig) => {
       // Optimistic update so the dashboard reflects the new goals immediately.
@@ -141,7 +128,6 @@ function Dashboard() {
           >
             <RefreshCw size={16} className={query.isFetching ? "animate-spin" : ""} />
           </button>
-          <FileUpload onFile={handleFile} />
         </div>
       </header>
 
