@@ -311,35 +311,35 @@ function processLeads(
   return { funnel, sdrMap, closerMap, totalLeads: allLeads.length };
 }
 
-// ─── SDR meetings (DADOS DIARIOS) ────────────────────────────────────────────
-// "Reuniões por SDR" / "Ranking SDR" are driven by DADOS DIARIOS, the daily
-// pipeline-movement log. A lead counts as 1 agendada if it was moved to the
-// EXACT "Reunião Agendada" stage at some point in the current month (counted
-// once per lead, stays for the rest of the month); same for "Reunião
-// Realizada/R2". Stages like no-show/negociação do NOT count as agendada — only
-// an actual move to that stage does. Grouped by SDR (col K); no SDR -> default.
+// ─── DADOS DIARIOS month processing (funnel + SDR meetings) ──────────────────
+// DADOS DIARIOS is the daily pipeline-movement log. Both the Sales Funnel and
+// the SDR ranking/marketing cards use the SAME rule: a lead counts at a stage if
+// it was moved to that EXACT stage at some point in the current month (counted
+// once per lead, stays for the rest of the month). Moving to a later stage does
+// NOT retroactively count earlier ones — only an actual move to each stage does.
 const DEFAULT_SDR = "Ana Clara";
 
-// Exact-stage match: the lead was dragged to "Reunião Agendada".
-function stageIsAgendada(etapa: string): boolean {
-  return etapa.toLowerCase().includes("agendada");
-}
-// Exact-stage match: the lead was dragged to "Reunião Realizada/R2".
-function stageIsRealizada(etapa: string): boolean {
-  const e = etapa.toLowerCase();
-  return e.includes("realizada") || e.includes("/r2");
-}
+const stageIsAgendada = (e: string) => e.toLowerCase().includes("agendada");
+const stageIsRealizada = (e: string) => {
+  const s = e.toLowerCase();
+  return s.includes("realizada") || s.includes("/r2");
+};
+const stageIsNegociacao = (e: string) => e.toLowerCase().includes("negocia");
+const stageIsGanha = (e: string) => e.toLowerCase().includes("ganha");
 
-function processSdrMeetings(
-  dadosRows: string[][]
-): Map<string, { agendadas: number; realizadas: number }> {
-  const map = new Map<string, { agendadas: number; realizadas: number }>();
-  if (dadosRows.length < 2) return map;
+function processDadosMonth(dadosRows: string[][]): {
+  sdrMap: Map<string, { agendadas: number; realizadas: number }>;
+  funnel: { agendada: number; realizada: number; negociacao: number; ganha: number };
+} {
+  const sdrMap = new Map<string, { agendadas: number; realizadas: number }>();
+  const funnel = { agendada: 0, realizada: 0, negociacao: 0, ganha: 0 };
+  if (dadosRows.length < 2) return { sdrMap, funnel };
   const hmap = headerMap(dadosRows[0]);
 
-  // Group the current month's rows by lead, tracking the SDR and whether the
-  // lead reached each milestone at any point during the month.
-  const byLead = new Map<string, { sdr: string; agendada: boolean; realizada: boolean }>();
+  // Group the current month's rows by lead, flagging which exact stages the
+  // lead was moved to during the month.
+  type Flags = { sdr: string; agendada: boolean; realizada: boolean; negociacao: boolean; ganha: boolean };
+  const byLead = new Map<string, Flags>();
   for (let i = 1; i < dadosRows.length; i++) {
     const r = dadosRows[i];
     if (!r || r.length < 2) continue;
@@ -352,22 +352,29 @@ function processSdrMeetings(
 
     const etapa = cellVal(r, hmap, "etapa atual");
     const sdr = cellVal(r, hmap, "sdr");
-    const entry = byLead.get(key) ?? { sdr: "", agendada: false, realizada: false };
-    if (sdr && !entry.sdr) entry.sdr = sdr;
-    if (stageIsAgendada(etapa)) entry.agendada = true;
-    if (stageIsRealizada(etapa)) entry.realizada = true;
-    byLead.set(key, entry);
+    const e = byLead.get(key) ?? { sdr: "", agendada: false, realizada: false, negociacao: false, ganha: false };
+    if (sdr && !e.sdr) e.sdr = sdr;
+    if (stageIsAgendada(etapa)) e.agendada = true;
+    if (stageIsRealizada(etapa)) e.realizada = true;
+    if (stageIsNegociacao(etapa)) e.negociacao = true;
+    if (stageIsGanha(etapa)) e.ganha = true;
+    byLead.set(key, e);
   }
 
   for (const lead of byLead.values()) {
-    if (!lead.agendada && !lead.realizada) continue;
-    const sdr = lead.sdr || DEFAULT_SDR;
-    const s = map.get(sdr) ?? { agendadas: 0, realizadas: 0 };
-    if (lead.agendada) s.agendadas++;
-    if (lead.realizada) s.realizadas++;
-    map.set(sdr, s);
+    if (lead.agendada) funnel.agendada++;
+    if (lead.realizada) funnel.realizada++;
+    if (lead.negociacao) funnel.negociacao++;
+    if (lead.ganha) funnel.ganha++;
+    if (lead.agendada || lead.realizada) {
+      const sdr = lead.sdr || DEFAULT_SDR;
+      const s = sdrMap.get(sdr) ?? { agendadas: 0, realizadas: 0 };
+      if (lead.agendada) s.agendadas++;
+      if (lead.realizada) s.realizadas++;
+      sdrMap.set(sdr, s);
+    }
   }
-  return map;
+  return { sdrMap, funnel };
 }
 
 // ─── VENDAS processing ───────────────────────────────────────────────────────
@@ -619,9 +626,10 @@ export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handle
     });
     console.log("[Dashboard] championAds:", championAds.length, championAds.map((a) => `${a.ad}=${a.roas ?? "?"}x`).join(", "));
 
-    // SDR meetings from DADOS DIARIOS (current month, Etapa Atual = Reunião
-    // Agendada / Reunião Realizada/R2), grouped by SDR.
-    const sdrMeetings = processSdrMeetings(dadosDiariosRows);
+    // Funnel + SDR meetings, both from DADOS DIARIOS (current month, literal
+    // moves to each exact stage, counted once per lead).
+    const dadosMonth = processDadosMonth(dadosDiariosRows);
+    const sdrMeetings = dadosMonth.sdrMap;
     const sdrs: DashboardData["sdrs"] = [];
     if (sdrMeetings.size > 0) {
       for (const [name, stats] of sdrMeetings) {
@@ -632,25 +640,21 @@ export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handle
     }
     console.log("[Dashboard] sdrMeetings:", [...sdrMeetings.entries()].map(([n, s]) => `${n}: ${s.agendadas}ag/${s.realizadas}re`).join(", ") || "(nenhuma este mês)");
 
-    // Reunião Agendada / Realizada (marketing strip) = current-month totals from
-    // DADOS DIARIOS, summed across SDRs. Pulled automatically from the sheet.
-    let reunioesAgendadas = 0;
-    let reunioesRealizadas = 0;
-    for (const s of sdrMeetings.values()) {
-      reunioesAgendadas += s.agendadas;
-      reunioesRealizadas += s.realizadas;
-    }
+    // Marketing strip Reunião Agendada/Realizada = same DADOS DIARIOS month totals.
+    const reunioesAgendadas = dadosMonth.funnel.agendada;
+    const reunioesRealizadas = dadosMonth.funnel.realizada;
 
     // "Valor em Aberto" = total value of opps currently in the GHL "Negociação"
     // stage. Falls back to closed sales only if the CRM funnel is unavailable.
     const openValue = ghlFunnel?.negociacaoValue ?? totalVendas;
 
-    // Funnel: prefer the live CRM (GHL) data; fall back to the sheets.
-    const funnelStages = ghlFunnel?.stages ?? [
-      { stage: "Reunião Agendada", value: leads.funnel.agendadas },
-      { stage: "Reunião Realizada", value: leads.funnel.realizadas },
-      { stage: "Proposta Apresentada", value: leads.funnel.propostas },
-      { stage: "Contrato Enviado", value: leads.funnel.vendas },
+    // Funnel: current-month moves per stage from DADOS DIARIOS (same logic as
+    // the SDR ranking / marketing cards), so all three stay consistent.
+    const funnelStages = [
+      { stage: "Reunião Agendada", value: dadosMonth.funnel.agendada },
+      { stage: "Reunião Realizada", value: dadosMonth.funnel.realizada },
+      { stage: "Negociação", value: dadosMonth.funnel.negociacao },
+      { stage: "Venda Ganha", value: dadosMonth.funnel.ganha },
     ];
 
     const data: DashboardData = {
