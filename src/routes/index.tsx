@@ -99,11 +99,11 @@ function Dashboard() {
   );
 
   return (
-    <div className="min-h-screen w-full p-4 lg:p-6 xl:p-8">
+    <div className="h-screen w-full overflow-hidden flex flex-col p-3 xl:p-4 2xl:p-5">
       <Toaster theme="dark" position="top-right" />
-      <header className="flex items-center justify-between mb-6">
+      <header className="flex items-center justify-between mb-3 shrink-0">
         <div className="flex items-center gap-4">
-          <img src={logo} alt="Simplifica" className="h-10 invert" />
+          <img src={logo} alt="Simplifica" className="h-9 invert" />
           <div className="hidden md:block h-8 w-px bg-border" />
           <div className="hidden md:block">
             <div className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground">Dashboard Comercial</div>
@@ -131,18 +131,16 @@ function Dashboard() {
         </div>
       </header>
 
-      <main className="grid grid-cols-12 gap-4 xl:gap-5">
+      <main className="flex-1 min-h-0 grid grid-cols-12 auto-rows-min content-between gap-3 xl:gap-4">
         {/* SECTION 1: Goals */}
-        <section className="col-span-12 xl:col-span-9 glass rounded-2xl p-6">
-          <div className="grid lg:grid-cols-[1fr_auto] gap-6 items-center">
+        <section className="col-span-12 xl:col-span-9 glass rounded-2xl p-5 flex items-center">
+          <div className="grid lg:grid-cols-[1fr_auto] gap-6 items-center w-full">
             <div className="space-y-5">
               <ProgressGoal label="Meta de Vendas" value={data.salesGoal.value} goal={data.salesGoal.goal} />
               <ProgressGoal label="Meta de TCV" value={data.tcvGoal.value} goal={data.tcvGoal.goal} accent="cyan" />
             </div>
-            <div className="grid grid-cols-2 lg:grid-cols-1 gap-3 lg:min-w-[220px] lg:border-l lg:pl-6 border-border">
-              <Stat label="Vendas no Mês" value={formatBRL(data.salesGoal.value)} highlight />
-              <Stat label="TCV" value={formatBRL(data.tcvGoal.value)} />
-              <Stat label="Valor em Aberto" value={formatBRL(data.openValue)} />
+            <div className="grid grid-cols-2 lg:grid-cols-1 gap-3 lg:min-w-[240px] lg:border-l lg:pl-6 border-border">
+              <Stat label="Valor em Aberto" value={formatBRL(data.openValue)} highlight />
               <Stat label="TCV em Aberto" value={formatBRL(data.openTcv)} />
             </div>
           </div>
@@ -154,7 +152,7 @@ function Dashboard() {
         </section>
 
         {/* SECTION 2: Closer Cards */}
-        <section className="col-span-12 xl:col-span-9 grid grid-cols-1 md:grid-cols-3 gap-4">
+        <section className="col-span-12 xl:col-span-9 grid grid-cols-1 md:grid-cols-3 gap-3 xl:gap-4 min-h-0">
           {data.closers.map((c) => <CloserCard key={c.name} closer={c} />)}
         </section>
 
@@ -179,7 +177,7 @@ function Dashboard() {
         </section>
       </main>
 
-      <footer className="mt-6 text-center text-[11px] text-muted-foreground/60 tracking-widest uppercase">
+      <footer className="mt-2 text-center text-[10px] text-muted-foreground/50 tracking-widest uppercase shrink-0">
         Simplifica · Aceleradora de Negócios
       </footer>
     </div>
