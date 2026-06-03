@@ -10,7 +10,8 @@ function PodiumItem({
   closer: CloserStats;
   place: 1 | 2 | 3;
 }) {
-  const total = closer.vendas.value;
+  // Ranking is by TCV (Valor do Contrato), not Valor pago.
+  const total = closer.tcv.value;
   const config = {
     1: { medal: "🥇", h: "h-32", color: "var(--gold)", ring: "oklch(0.85 0.16 90 / 0.6)", scale: "scale-110", size: "h-20 w-20", text: "text-lg" },
     2: { medal: "🥈", h: "h-20", color: "var(--silver)", ring: "oklch(0.82 0.02 250 / 0.5)", scale: "", size: "h-14 w-14", text: "text-sm" },
@@ -45,7 +46,7 @@ function PodiumItem({
 
 export function CloserRanking({ closers }: { closers: CloserStats[] }) {
   const sorted = [...closers]
-    .sort((a, b) => b.vendas.value - a.vendas.value);
+    .sort((a, b) => b.tcv.value - a.tcv.value);
   const [first, second, third] = sorted;
   return (
     <div className="glass rounded-2xl p-5 h-full">
