@@ -312,12 +312,39 @@ function processLeads(
 }
 
 // ─── SDR meetings (DADOS DIARIOS) ────────────────────────────────────────────
-// "Reuniões por SDR" / "Ranking SDR" are driven by DADOS DIARIOS, which logs the
-// daily pipeline movements. We count CURRENT-MONTH rows whose Etapa Atual (col J)
-// is exactly "Reunião Agendada" (-> agendadas) or "Reunião Realizada/R2"
-// (-> realizadas), grouped by the SDR column (col K). Rows with no SDR filled in
-// are attributed to the default SDR.
+// "Reuniões por SDR" / "Ranking SDR" are driven by DADOS DIARIOS, the daily
+// pipeline-movement log. Counting is CUMULATIVE per lead within the month: once
+// a lead reaches "Reunião Agendada" (or any later stage) it counts as 1 agendada
+// for the rest of the month — even after it moves on; same idea for realizada.
+// Grouped by the SDR column (col K); rows with no SDR use the default SDR.
 const DEFAULT_SDR = "Ana Clara";
+
+// A lead "reached agendada" if its stage is the meeting-scheduled stage or any
+// stage beyond it (no-show implies a meeting was scheduled).
+function stageReachedAgendada(etapa: string): boolean {
+  const e = etapa.toLowerCase();
+  return (
+    e.includes("agendada") ||
+    e.includes("no show") ||
+    e.includes("realizada") ||
+    e.includes("/r2") ||
+    e.includes("negocia") ||
+    e.includes("aguardando") ||
+    e.includes("retorno de contato") ||
+    e.includes("ganha")
+  );
+}
+function stageReachedRealizada(etapa: string): boolean {
+  const e = etapa.toLowerCase();
+  return (
+    e.includes("realizada") ||
+    e.includes("/r2") ||
+    e.includes("negocia") ||
+    e.includes("aguardando") ||
+    e.includes("retorno de contato") ||
+    e.includes("ganha")
+  );
+}
 
 function processSdrMeetings(
   dadosRows: string[][]
@@ -326,22 +353,34 @@ function processSdrMeetings(
   if (dadosRows.length < 2) return map;
   const hmap = headerMap(dadosRows[0]);
 
+  // Group the current month's rows by lead, tracking the SDR and whether the
+  // lead reached each milestone at any point during the month.
+  const byLead = new Map<string, { sdr: string; agendada: boolean; realizada: boolean }>();
   for (let i = 1; i < dadosRows.length; i++) {
     const r = dadosRows[i];
     if (!r || r.length < 2) continue;
-
-    // Only the current month, by the "Data" (daily movement date) column.
     if (!isCurrentMonthBR(cellVal(r, hmap, "data"))) continue;
 
-    const etapa = cellVal(r, hmap, "etapa atual").toLowerCase();
-    const agendada = etapa.includes("reuni") && etapa.includes("agendada");
-    const realizada = etapa.includes("realizada"); // "Reunião Realizada/R2"
-    if (!agendada && !realizada) continue;
+    const nome = cellVal(r, hmap, "nome");
+    const phone = cellVal(r, hmap, "telefone").replace(/\D/g, "");
+    const key = phone || nome.toLowerCase().trim();
+    if (!key) continue;
 
-    const sdr = cellVal(r, hmap, "sdr") || DEFAULT_SDR;
+    const etapa = cellVal(r, hmap, "etapa atual");
+    const sdr = cellVal(r, hmap, "sdr");
+    const entry = byLead.get(key) ?? { sdr: "", agendada: false, realizada: false };
+    if (sdr && !entry.sdr) entry.sdr = sdr;
+    if (stageReachedAgendada(etapa)) entry.agendada = true;
+    if (stageReachedRealizada(etapa)) entry.realizada = true;
+    byLead.set(key, entry);
+  }
+
+  for (const lead of byLead.values()) {
+    if (!lead.agendada && !lead.realizada) continue;
+    const sdr = lead.sdr || DEFAULT_SDR;
     const s = map.get(sdr) ?? { agendadas: 0, realizadas: 0 };
-    if (agendada) s.agendadas++;
-    if (realizada) s.realizadas++;
+    if (lead.agendada) s.agendadas++;
+    if (lead.realizada) s.realizadas++;
     map.set(sdr, s);
   }
   return map;
