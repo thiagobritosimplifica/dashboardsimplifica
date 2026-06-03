@@ -313,37 +313,21 @@ function processLeads(
 
 // ─── SDR meetings (DADOS DIARIOS) ────────────────────────────────────────────
 // "Reuniões por SDR" / "Ranking SDR" are driven by DADOS DIARIOS, the daily
-// pipeline-movement log. Counting is CUMULATIVE per lead within the month: once
-// a lead reaches "Reunião Agendada" (or any later stage) it counts as 1 agendada
-// for the rest of the month — even after it moves on; same idea for realizada.
-// Grouped by the SDR column (col K); rows with no SDR use the default SDR.
+// pipeline-movement log. A lead counts as 1 agendada if it was moved to the
+// EXACT "Reunião Agendada" stage at some point in the current month (counted
+// once per lead, stays for the rest of the month); same for "Reunião
+// Realizada/R2". Stages like no-show/negociação do NOT count as agendada — only
+// an actual move to that stage does. Grouped by SDR (col K); no SDR -> default.
 const DEFAULT_SDR = "Ana Clara";
 
-// A lead "reached agendada" if its stage is the meeting-scheduled stage or any
-// stage beyond it (no-show implies a meeting was scheduled).
-function stageReachedAgendada(etapa: string): boolean {
-  const e = etapa.toLowerCase();
-  return (
-    e.includes("agendada") ||
-    e.includes("no show") ||
-    e.includes("realizada") ||
-    e.includes("/r2") ||
-    e.includes("negocia") ||
-    e.includes("aguardando") ||
-    e.includes("retorno de contato") ||
-    e.includes("ganha")
-  );
+// Exact-stage match: the lead was dragged to "Reunião Agendada".
+function stageIsAgendada(etapa: string): boolean {
+  return etapa.toLowerCase().includes("agendada");
 }
-function stageReachedRealizada(etapa: string): boolean {
+// Exact-stage match: the lead was dragged to "Reunião Realizada/R2".
+function stageIsRealizada(etapa: string): boolean {
   const e = etapa.toLowerCase();
-  return (
-    e.includes("realizada") ||
-    e.includes("/r2") ||
-    e.includes("negocia") ||
-    e.includes("aguardando") ||
-    e.includes("retorno de contato") ||
-    e.includes("ganha")
-  );
+  return e.includes("realizada") || e.includes("/r2");
 }
 
 function processSdrMeetings(
@@ -370,8 +354,8 @@ function processSdrMeetings(
     const sdr = cellVal(r, hmap, "sdr");
     const entry = byLead.get(key) ?? { sdr: "", agendada: false, realizada: false };
     if (sdr && !entry.sdr) entry.sdr = sdr;
-    if (stageReachedAgendada(etapa)) entry.agendada = true;
-    if (stageReachedRealizada(etapa)) entry.realizada = true;
+    if (stageIsAgendada(etapa)) entry.agendada = true;
+    if (stageIsRealizada(etapa)) entry.realizada = true;
     byLead.set(key, entry);
   }
 
