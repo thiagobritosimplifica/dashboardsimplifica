@@ -359,8 +359,10 @@ function processSdrMeetings(
 
 // ─── VENDAS processing ───────────────────────────────────────────────────────
 // Columns: Cliente, Data Fechamento, Closer, Campanha, Conjunto, Anúncio,
-//          Serviço, Plano, Setup, Mensalidade, Receita Total, Tempo Contrato,
+//          Serviço, Plano, Setup, Valor pago, Valor do Contrato, Tempo Contrato,
 //          LTV, Status
+// "Vendas" = Valor pago (cash already collected). "TCV" = Valor do Contrato
+// (total the client will pay over the contract, possibly in installments).
 interface AdSale {
   ad: string;
   campaign: string;
@@ -391,18 +393,9 @@ function processVendas(rows: string[][]): {
     if (!cliente) continue;
 
     const closer = cellVal(r, hmap, "closer");
-    const setup = parseBR(cellVal(r, hmap, "setup"));
-    const mensalidade = parseBR(cellVal(r, hmap, "mensalidade"));
-    const tempoStr = cellVal(r, hmap, "tempo contrato");
-    const tempoMeses = parseFloat(tempoStr.replace(",", ".")) || 0;
-    const receitaTotal =
-      parseBR(cellVal(r, hmap, "receita total")) ||
-      setup + mensalidade * tempoMeses;
-    const ltv = parseBR(cellVal(r, hmap, "ltv")) || receitaTotal;
-
-    // "vendas" = setup (first payment), TCV = LTV over contract term
-    const vendaValor = setup || receitaTotal;
-    const tcvValor = ltv || receitaTotal;
+    // "Vendas" = Valor pago (collected); "TCV" = Valor do Contrato (total).
+    const vendaValor = parseBR(cellVal(r, hmap, "valor pago"));
+    const tcvValor = parseBR(cellVal(r, hmap, "valor do contrato"));
 
     result.totalVendas += vendaValor;
     result.totalTcv += tcvValor;
@@ -414,7 +407,8 @@ function processVendas(rows: string[][]): {
       result.closers.set(closer, c);
     }
 
-    // Attribute the sale revenue to its ad (Anúncio) for the champion-ads ranking.
+    // Champion-ads ranking: attribute the contract value (total deal value) to
+    // the ad that generated it.
     const ad = cellVal(r, hmap, "anúncio") || cellVal(r, hmap, "anuncio");
     if (ad) {
       const key = normalizeAdName(ad);
@@ -425,7 +419,7 @@ function processVendas(rows: string[][]): {
         revenue: 0,
         sales: 0,
       };
-      a.revenue += receitaTotal;
+      a.revenue += tcvValor;
       a.sales += 1;
       result.adSales.set(key, a);
     }
