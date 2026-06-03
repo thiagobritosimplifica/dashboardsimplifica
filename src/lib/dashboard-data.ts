@@ -78,12 +78,13 @@ export type DashboardData = {
   openTcv: number;
   marketing: {
     invested: number;
+    investedLeads: number; // spend excluding "Post do Instagram:" follower ads
     mqls: number;
     mqlsGoal: number;
     cpmol: number;
     marketingSales: number;
     roas: number;
-    reunioesAgendadas: number; // this month (GHL funnel)
+    reunioesAgendadas: number; // this month (DADOS DIARIOS)
     reunioesRealizadas: number;
   };
   funnel: { stage: string; value: number }[];
@@ -100,6 +101,7 @@ export const MOCK: DashboardData = {
   openTcv: 117116,
   marketing: {
     invested: 96000,
+    investedLeads: 88000,
     mqls: 283,
     mqlsGoal: 400,
     cpmol: 340,

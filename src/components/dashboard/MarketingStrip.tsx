@@ -19,8 +19,10 @@ function KpiCard({ icon, label, value, sub }: { icon: React.ReactNode; label: st
 }
 
 export function MarketingStrip({ m }: { m: DashboardData["marketing"] }) {
-  const custoAgendada = m.reunioesAgendadas > 0 ? m.invested / m.reunioesAgendadas : 0;
-  const custoRealizada = m.reunioesRealizadas > 0 ? m.invested / m.reunioesRealizadas : 0;
+  // Cost per meeting uses only lead-generation spend (excludes "Post do
+  // Instagram:" follower/boost ads), since those ads don't generate meetings.
+  const custoAgendada = m.reunioesAgendadas > 0 ? m.investedLeads / m.reunioesAgendadas : 0;
+  const custoRealizada = m.reunioesRealizadas > 0 ? m.investedLeads / m.reunioesRealizadas : 0;
   const costSub = (label: string, value: number) => (
     <div className="mt-1 flex items-baseline gap-1.5">
       <span className="text-[10px] uppercase tracking-widest text-muted-foreground">{label}</span>

@@ -112,16 +112,25 @@ function currentMonthPrefix(): string {
 //   Action Leads, ..., Spend, ...
 // Note: the export sometimes includes a duplicate header row — skip it.
 // Totals are restricted to the CURRENT MONTH so KPIs are monthly figures.
+// "Post do Instagram:" ads are boosted engagement/follower posts — they don't
+// generate meetings, so their spend is excluded from the cost-per-meeting.
+function isFollowerAd(adName: string, campaign: string): boolean {
+  const re = /^post do instagram/i;
+  return re.test(adName.trim()) || re.test(campaign.trim());
+}
+
 function processMetaRaw(rows: string[][]): {
-  invested: number;
+  invested: number; // total spend this month (all ads)
+  investedLeads: number; // spend excluding "Post do Instagram:" follower ads
   leads: number;
   adSpend: Map<string, number>; // normalized ad name -> spend (current month)
 } {
-  const empty = { invested: 0, leads: 0, adSpend: new Map<string, number>() };
+  const empty = { invested: 0, investedLeads: 0, leads: 0, adSpend: new Map<string, number>() };
   if (rows.length < 2) return empty;
   const hmap = headerMap(rows[0]);
   const monthPrefix = currentMonthPrefix();
   let invested = 0;
+  let investedLeads = 0;
   let leads = 0;
   const adSpend = new Map<string, number>();
 
@@ -136,16 +145,18 @@ function processMetaRaw(rows: string[][]): {
     if (date && !date.startsWith(monthPrefix)) continue;
 
     const spend = parseBR(cellVal(r, hmap, "spend (cost, amount spent)"));
+    const adName = cellVal(r, hmap, "ad name");
+    const campaign = cellVal(r, hmap, "campaign name");
     invested += spend;
+    if (!isFollowerAd(adName, campaign)) investedLeads += spend;
     leads += parseFloat(cellVal(r, hmap, "action leads").replace(",", ".")) || 0;
 
-    const adName = cellVal(r, hmap, "ad name");
     if (adName) {
       const key = normalizeAdName(adName);
       adSpend.set(key, (adSpend.get(key) ?? 0) + spend);
     }
   }
-  return { invested, leads, adSpend };
+  return { invested, investedLeads, leads, adSpend };
 }
 
 // ─── Lead processing (GHL_RAW + DADOS DIARIOS) ───────────────────────────────
@@ -637,6 +648,7 @@ export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handle
       openTcv: totalTcv,
       marketing: {
         invested,
+        investedLeads: meta.investedLeads,
         mqls,
         mqlsGoal: goals.mqlsGoal,
         cpmol: cpmql,
