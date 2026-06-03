@@ -8,7 +8,7 @@ interface Props {
 }
 
 export function ProgressGoal({ label, value, goal, accent = "blue" }: Props) {
-  const pct = Math.min(100, (value / goal) * 100);
+  const pct = goal > 0 ? Math.min(100, (value / goal) * 100) : 0;
   const fill =
     accent === "cyan"
       ? "linear-gradient(90deg, oklch(0.5 0.18 240), oklch(0.85 0.16 210))"

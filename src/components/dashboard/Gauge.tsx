@@ -8,7 +8,8 @@ interface Props {
 }
 
 export function Gauge({ label, value, goal, size = 120 }: Props) {
-  const pct = Math.min(100, (value / goal) * 100);
+  // Guard against a zero/empty goal (avoids NaN%).
+  const pct = goal > 0 ? Math.min(100, (value / goal) * 100) : 0;
   const stroke = 10;
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
