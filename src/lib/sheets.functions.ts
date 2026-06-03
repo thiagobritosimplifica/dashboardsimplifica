@@ -1,7 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import type { DashboardData, GoalsConfig } from "./dashboard-data";
-import { CLOSERS, DEFAULT_GOALS, closerGoalKey } from "./dashboard-data";
+import {
+  CLOSERS,
+  DEFAULT_GOALS,
+  closerGoalKey,
+  currentMonthPrefix,
+  isCurrentMonthBR,
+} from "./dashboard-data";
 import { getGhlFunnel } from "./ghl.functions";
 import { getMetasConfig } from "./config.server";
 
@@ -99,12 +105,6 @@ function isNonEmpty(v: string): boolean {
 // Normalize an ad/campaign name for matching across sheets.
 function normalizeAdName(v: string): string {
   return v.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
-// Current month as "YYYY-MM" (server timezone).
-function currentMonthPrefix(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
 // ─── META_RAW processing ─────────────────────────────────────────────────────
@@ -319,16 +319,6 @@ function processLeads(
 // are attributed to the default SDR.
 const DEFAULT_SDR = "Ana Clara";
 
-// DADOS DIARIOS "Data" is BR format "D/M/YYYY" or "DD/MM/YYYY".
-function isCurrentMonthBR(dateStr: string): boolean {
-  const parts = dateStr.trim().split("/");
-  if (parts.length !== 3) return false;
-  const month = parseInt(parts[1], 10);
-  const year = parseInt(parts[2], 10);
-  const now = new Date();
-  return month === now.getMonth() + 1 && year === now.getFullYear();
-}
-
 function processSdrMeetings(
   dadosRows: string[][]
 ): Map<string, { agendadas: number; realizadas: number }> {
@@ -391,6 +381,11 @@ function processVendas(rows: string[][]): {
     if (!r || r.length < 2) continue;
     const cliente = cellVal(r, hmap, "cliente");
     if (!cliente) continue;
+
+    // Keep only deals closed in the current month (skip rows from other months;
+    // rows without a close date are kept, like META_RAW's lenient filter).
+    const dataFech = cellVal(r, hmap, "data fechamento");
+    if (dataFech && !isCurrentMonthBR(dataFech)) continue;
 
     const closer = cellVal(r, hmap, "closer");
     // "Vendas" = Valor pago (collected); "TCV" = Valor do Contrato (total).

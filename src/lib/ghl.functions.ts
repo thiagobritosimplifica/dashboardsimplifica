@@ -1,4 +1,5 @@
 import { getGhlConfig } from "./config.server";
+import { isCurrentMonthISO } from "./dashboard-data";
 
 // ─── GoHighLevel (LeadConnector) funnel integration ─────────────────────────
 // Pulls live opportunities from the CRM and builds the sales funnel.
@@ -38,13 +39,6 @@ interface GhlOpportunity {
   createdAt?: string; // ISO date the opp was created
 }
 
-// True if an ISO datetime ("2026-06-01T...") falls in the current month.
-function isCurrentMonthISO(dateStr: string | undefined): boolean {
-  if (!dateStr) return false;
-  const d = new Date();
-  const prefix = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-  return dateStr.startsWith(prefix);
-}
 
 function ghlHeaders() {
   const cfg = getGhlConfig();

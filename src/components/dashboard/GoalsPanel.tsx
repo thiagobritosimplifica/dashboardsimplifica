@@ -103,11 +103,6 @@ export function GoalsPanel({
                   onChange={(v) => updateField("tcvGoal", v)}
                   prefix="R$"
                 />
-                <GoalInput
-                  label="Meta de MQLs"
-                  value={goals.mqlsGoal}
-                  onChange={(v) => updateField("mqlsGoal", v)}
-                />
               </div>
             </div>
 

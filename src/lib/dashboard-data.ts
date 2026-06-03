@@ -41,6 +41,50 @@ export function closerGoalKey(name: string, field: "vendas" | "tcv"): string {
   return `${name.trim().toLowerCase()}_${field}`;
 }
 
+// ─── Date helpers (Brazil timezone) ──────────────────────────────────────────
+// All "current month" logic is anchored to America/Sao_Paulo so month
+// boundaries match Brazil time, not the server's (likely UTC) clock.
+function ymInBrazil(date: Date): { year: number; month: number } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(date);
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
+  return { year: get("year"), month: get("month") };
+}
+
+export function brazilNowParts(): { year: number; month: number } {
+  return ymInBrazil(new Date());
+}
+
+/** Current month as "YYYY-MM" in Brazil time (for ISO dates like "2026-06-01"). */
+export function currentMonthPrefix(): string {
+  const { year, month } = brazilNowParts();
+  return `${year}-${String(month).padStart(2, "0")}`;
+}
+
+/** True if a BR-format date ("D/M/YYYY" or "DD/MM/YYYY") is in the current month. */
+export function isCurrentMonthBR(dateStr: string): boolean {
+  const parts = dateStr.trim().split("/");
+  if (parts.length !== 3) return false;
+  const month = parseInt(parts[1], 10);
+  const year = parseInt(parts[2], 10);
+  const now = brazilNowParts();
+  return month === now.month && year === now.year;
+}
+
+/** True if an ISO datetime (UTC, e.g. "2026-06-01T17:52Z") is in the current
+ *  month when converted to Brazil time. */
+export function isCurrentMonthISO(dateStr: string | undefined): boolean {
+  if (!dateStr) return false;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return false;
+  const a = ymInBrazil(d);
+  const b = brazilNowParts();
+  return a.year === b.year && a.month === b.month;
+}
+
 /**
  * Photo filename slug for any person (closer or SDR): full name, lowercased,
  * accent-stripped, spaces removed. e.g. "Ana Clara" -> "anaclara".
