@@ -319,6 +319,8 @@ function processLeads(
 // NOT retroactively count earlier ones — only an actual move to each stage does.
 const DEFAULT_SDR = "Ana Clara";
 
+const stageIsSaudacao = (e: string) => e.toLowerCase().includes("sauda");
+const stageIsQualificado = (e: string) => e.toLowerCase().includes("qualificado");
 const stageIsAgendada = (e: string) => e.toLowerCase().includes("agendada");
 const stageIsRealizada = (e: string) => {
   const s = e.toLowerCase();
@@ -330,15 +332,27 @@ const stageIsGanha = (e: string) => e.toLowerCase().includes("ganha");
 function processDadosMonth(dadosRows: string[][]): {
   sdrMap: Map<string, { agendadas: number; realizadas: number }>;
   funnel: { agendada: number; realizada: number; negociacao: number; ganha: number };
+  leadsEntrada: number; // leads created at "Saudação" this month
+  qualificado: number; // leads moved to "Qualificado" this month (MQL)
 } {
   const sdrMap = new Map<string, { agendadas: number; realizadas: number }>();
   const funnel = { agendada: 0, realizada: 0, negociacao: 0, ganha: 0 };
-  if (dadosRows.length < 2) return { sdrMap, funnel };
+  let leadsEntrada = 0;
+  let qualificado = 0;
+  if (dadosRows.length < 2) return { sdrMap, funnel, leadsEntrada, qualificado };
   const hmap = headerMap(dadosRows[0]);
 
   // Group the current month's rows by lead, flagging which exact stages the
   // lead was moved to during the month.
-  type Flags = { sdr: string; agendada: boolean; realizada: boolean; negociacao: boolean; ganha: boolean };
+  type Flags = {
+    sdr: string;
+    saudacao: boolean;
+    qualificado: boolean;
+    agendada: boolean;
+    realizada: boolean;
+    negociacao: boolean;
+    ganha: boolean;
+  };
   const byLead = new Map<string, Flags>();
   for (let i = 1; i < dadosRows.length; i++) {
     const r = dadosRows[i];
@@ -352,8 +366,12 @@ function processDadosMonth(dadosRows: string[][]): {
 
     const etapa = cellVal(r, hmap, "etapa atual");
     const sdr = cellVal(r, hmap, "sdr");
-    const e = byLead.get(key) ?? { sdr: "", agendada: false, realizada: false, negociacao: false, ganha: false };
+    const e =
+      byLead.get(key) ??
+      { sdr: "", saudacao: false, qualificado: false, agendada: false, realizada: false, negociacao: false, ganha: false };
     if (sdr && !e.sdr) e.sdr = sdr;
+    if (stageIsSaudacao(etapa)) e.saudacao = true;
+    if (stageIsQualificado(etapa)) e.qualificado = true;
     if (stageIsAgendada(etapa)) e.agendada = true;
     if (stageIsRealizada(etapa)) e.realizada = true;
     if (stageIsNegociacao(etapa)) e.negociacao = true;
@@ -362,6 +380,8 @@ function processDadosMonth(dadosRows: string[][]): {
   }
 
   for (const lead of byLead.values()) {
+    if (lead.saudacao) leadsEntrada++;
+    if (lead.qualificado) qualificado++;
     if (lead.agendada) funnel.agendada++;
     if (lead.realizada) funnel.realizada++;
     if (lead.negociacao) funnel.negociacao++;
@@ -374,7 +394,7 @@ function processDadosMonth(dadosRows: string[][]): {
       sdrMap.set(sdr, s);
     }
   }
-  return { sdrMap, funnel };
+  return { sdrMap, funnel, leadsEntrada, qualificado };
 }
 
 // ─── VENDAS processing ───────────────────────────────────────────────────────
@@ -565,12 +585,8 @@ export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handle
     console.log("[Dashboard] leads:", leads.totalLeads, "unique, funnel:", leads.funnel);
     console.log("[Dashboard] vendas:", vendas.totalVendas, "TCV:", vendas.totalTcv);
 
-    // Invested + MQLs: Meta Ads data is the source of truth for ad spend.
-    // MQLs = leads created THIS MONTH (from the live CRM), else sheet count.
-    const crmLeadsThisMonth = ghlFunnel?.leadsThisMonth ?? leads.totalLeads;
+    // Ad spend (META_RAW). Leads/MQL counts come from DADOS DIARIOS (below).
     const invested = meta.invested;
-    const mqls = meta.leads > 0 ? meta.leads : crmLeadsThisMonth;
-    const cpmql = mqls > 0 ? invested / mqls : 0;
 
     // Sales + TCV: the VENDAS tab is the source of truth for closed revenue.
     // A row is created there automatically whenever a deal is won in GHL, so
@@ -644,6 +660,13 @@ export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handle
     const reunioesAgendadas = dadosMonth.funnel.agendada;
     const reunioesRealizadas = dadosMonth.funnel.realizada;
 
+    // Leads (entered funnel = "Saudação" this month) and MQL (moves to
+    // "Qualificado" this month). CPMQL = ad spend ÷ MQL.
+    const leadsEntrada = dadosMonth.leadsEntrada;
+    const mqls = dadosMonth.qualificado;
+    const cpmql = mqls > 0 ? invested / mqls : 0;
+    console.log("[Dashboard] leadsEntrada:", leadsEntrada, "| MQL(qualificado):", mqls, "| CPMQL:", cpmql.toFixed(2));
+
     // "Valor em Aberto" = total value of opps currently in the GHL "Negociação"
     // stage. Falls back to closed sales only if the CRM funnel is unavailable.
     const openValue = ghlFunnel?.negociacaoValue ?? totalVendas;
@@ -665,6 +688,7 @@ export const fetchDashboardFromSheets = createServerFn({ method: "GET" }).handle
       marketing: {
         invested,
         investedLeads: meta.investedLeads,
+        leadsEntrada,
         mqls,
         mqlsGoal: goals.mqlsGoal,
         cpmol: cpmql,

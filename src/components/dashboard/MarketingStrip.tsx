@@ -1,4 +1,4 @@
-import { DollarSign, CalendarCheck, CalendarClock, Activity } from "lucide-react";
+import { Users, Target, CalendarClock, Activity } from "lucide-react";
 import type { DashboardData } from "@/lib/dashboard-data";
 import { formatBRL } from "@/lib/dashboard-data";
 
@@ -19,9 +19,8 @@ function KpiCard({ icon, label, value, sub }: { icon: React.ReactNode; label: st
 }
 
 export function MarketingStrip({ m }: { m: DashboardData["marketing"] }) {
-  // Cost per meeting uses only lead-generation spend (excludes "Post do
+  // Cost per realizada uses only lead-generation spend (excludes "Post do
   // Instagram:" follower/boost ads), since those ads don't generate meetings.
-  const custoAgendada = m.reunioesAgendadas > 0 ? m.investedLeads / m.reunioesAgendadas : 0;
   const custoRealizada = m.reunioesRealizadas > 0 ? m.investedLeads / m.reunioesRealizadas : 0;
   const costSub = (label: string, value: number) => (
     <div className="mt-1 flex items-baseline gap-1.5">
@@ -33,12 +32,12 @@ export function MarketingStrip({ m }: { m: DashboardData["marketing"] }) {
   );
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-      <KpiCard icon={<DollarSign size={18} />} label="Investido (mês)" value={formatBRL(m.invested)} />
+      <KpiCard icon={<Users size={18} />} label="Leads (mês)" value={String(m.leadsEntrada)} />
       <KpiCard
-        icon={<CalendarCheck size={18} />}
-        label="Reunião Agendada"
-        value={String(m.reunioesAgendadas)}
-        sub={costSub("Custo", custoAgendada)}
+        icon={<Target size={18} />}
+        label="MQL"
+        value={String(m.mqls)}
+        sub={costSub("CPMQL", m.cpmol)}
       />
       <KpiCard
         icon={<CalendarClock size={18} />}

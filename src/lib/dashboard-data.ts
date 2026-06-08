@@ -123,9 +123,10 @@ export type DashboardData = {
   marketing: {
     invested: number;
     investedLeads: number; // spend excluding "Post do Instagram:" follower ads
-    mqls: number;
+    leadsEntrada: number; // leads that entered the funnel ("Saudação") this month
+    mqls: number; // MQL = moves to "Qualificado" this month
     mqlsGoal: number;
-    cpmol: number;
+    cpmol: number; // CPMQL = invested / mqls
     marketingSales: number;
     roas: number;
     reunioesAgendadas: number; // this month (DADOS DIARIOS)
@@ -146,6 +147,7 @@ export const MOCK: DashboardData = {
   marketing: {
     invested: 96000,
     investedLeads: 88000,
+    leadsEntrada: 412,
     mqls: 283,
     mqlsGoal: 400,
     cpmol: 340,
