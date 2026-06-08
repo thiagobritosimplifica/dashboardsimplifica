@@ -1,6 +1,6 @@
 import { DollarSign, CalendarCheck, CalendarClock, Activity } from "lucide-react";
 import type { DashboardData } from "@/lib/dashboard-data";
-import { formatCompact, formatBRL } from "@/lib/dashboard-data";
+import { formatBRL } from "@/lib/dashboard-data";
 
 function KpiCard({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: string; sub?: React.ReactNode }) {
   return (
@@ -33,7 +33,7 @@ export function MarketingStrip({ m }: { m: DashboardData["marketing"] }) {
   );
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-      <KpiCard icon={<DollarSign size={18} />} label="Investido (mês)" value={formatCompact(m.invested)} />
+      <KpiCard icon={<DollarSign size={18} />} label="Investido (mês)" value={formatBRL(m.invested)} />
       <KpiCard
         icon={<CalendarCheck size={18} />}
         label="Reunião Agendada"

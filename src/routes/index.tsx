@@ -99,7 +99,7 @@ function Dashboard() {
   );
 
   return (
-    <div className="h-screen w-full overflow-hidden flex flex-col p-3 xl:p-4 2xl:p-5">
+    <div className="min-h-screen w-full flex flex-col p-3 xl:p-4 2xl:p-5">
       <Toaster theme="dark" position="top-right" />
       <header className="flex items-center justify-between mb-3 shrink-0">
         <div className="flex items-center gap-4">
@@ -131,7 +131,7 @@ function Dashboard() {
         </div>
       </header>
 
-      <main className="flex-1 min-h-0 grid grid-cols-12 auto-rows-min content-between gap-3 xl:gap-4">
+      <main className="flex-1 grid grid-cols-12 auto-rows-min content-between gap-3 xl:gap-4">
         {/* SECTION 1: Goals */}
         <section className="col-span-12 xl:col-span-9 glass rounded-2xl p-5 flex items-center">
           <div className="grid lg:grid-cols-[1fr_auto] gap-6 items-center w-full">
